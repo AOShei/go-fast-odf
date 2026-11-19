@@ -27,21 +27,29 @@ Status legend: **done**, **partial**, **todo**.
 | Item | Status |
 |---|---|
 | Repository setup, plan, NOTICE | done |
-| Package reading: zip limits, recovery, mimetype, manifest | todo |
-| Encrypted packages: detected; `ErrPasswordRequired` without a password, `ErrUnsupported` with one (decryption is phase 3) | todo |
-| `meta.xml` to metadata | todo |
-| Styles: heading levels, list styles, hidden text, colours, font sizes | todo |
-| odt: headings (with `text:number` / outline numbering), paragraphs | todo |
-| odt: lists with markers | todo |
-| odt: tables with spans as merges, header rows, repeated rows/columns | todo |
-| odt: sections, frames and text boxes in reading order, images | todo |
-| odt: footnotes/endnotes, comments, tracked deletions as notes | todo |
-| odt: hidden text (display none, hidden paragraphs/sections, conditional text, colour near background, tiny text) | todo |
-| odt: fields as text; user-field-decls / variables to the stored part | todo |
-| Headers and footers from master pages | todo |
-| Text budget, limits, warnings | todo |
-| Tests with synthetic fixtures, Validate on each; fuzz targets | todo |
-| README | todo |
+| Package reading: zip limits, recovery, mimetype, manifest | done |
+| Encrypted packages: detected; `ErrPasswordRequired` without a password, `ErrUnsupported` with one (decryption is phase 3) | done |
+| `meta.xml` to metadata | done |
+| Styles: heading levels, list styles, hidden text, colours, font sizes | done |
+| odt: headings (with `text:number` / outline numbering), paragraphs | done |
+| odt: lists with markers | done |
+| odt: tables with spans as merges, header rows, repeated rows/columns | done |
+| odt: sections, frames and text boxes in reading order, images | done |
+| odt: footnotes/endnotes, comments, tracked deletions as notes | done |
+| odt: hidden text (display none, hidden paragraphs/sections, conditional text, colour near background, tiny text) | done |
+| odt: fields as text; user-field-decls to the stored part | done (variable-decls hold no values; nothing stored for them) |
+| Headers and footers from master pages | done |
+| Text budget, limits, warnings | done |
+| Tests with synthetic fixtures, Validate on each; fuzz targets | done (see note on fuzzing below) |
+| README | done (phase 1 scope) |
+| Unit tests inside internal packages (style resolution, number formats, odpkg Resolve/IsExternal) | todo: covered only through the public API |
+| Table cell details (`Table.Cells` hrefs with Options.Spans) | todo |
+
+Fuzzing note: in the run-1 sandbox, `go test -fuzz` stalled after a few
+executions for every target (a trivial target ran at ~1,500 execs/s), so
+the fuzz targets' work is also done by `TestMutations`, a seeded mutation
+run under plain `go test`. Run `go test -fuzz=FuzzContent -fuzztime=20s`
+(and FuzzStyles, FuzzMeta, FuzzManifest, FuzzExtract) on a normal machine.
 
 ### Phase 2: spreadsheets, presentations, flat XML, CLI (run 2)
 
