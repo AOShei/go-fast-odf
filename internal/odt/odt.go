@@ -119,7 +119,7 @@ type reader struct {
 	prevSeq int    // the seq of the last paragraph where breaks may be
 	prevSig string // its border
 	pend    *pendingBreak
-	tick        int
+	tick    int
 }
 
 // Read reads content.xml (and styles.xml for headers and footers).
