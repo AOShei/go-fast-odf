@@ -39,6 +39,7 @@ var mimeByExt = map[string]string{
 // group, a link around drawings, or a shape, whose text is read as blocks.
 func (r *reader) drawing(c ctxt, dst *[]gofastcore.Block) {
 	s := &r.s
+	c.breaks = false // a rule in a frame is part of its picture
 	switch string(s.Local()) {
 	case "frame":
 		r.frame(c, dst)

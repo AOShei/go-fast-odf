@@ -71,6 +71,42 @@ type Style struct {
 	hasList    bool
 	master     string
 	boxHidden  Tri // On: the sheet or slide is hidden
+	name       string
+	border     [4]string // top, bottom, left, right as written; "" unset
+}
+
+// Sides of a paragraph's border, as indexes of Resolved.Border.
+const (
+	Top = iota
+	Bottom
+	Left
+	Right
+)
+
+// readBorders reads fo:border and fo:border-top/-bottom/-left/-right.
+func readBorders(s *xmlscan.Scanner, st *Style) {
+	if v, ok := s.Attr(ns.FO, "border"); ok {
+		for i := range st.border {
+			st.border[i] = borderValue(v)
+		}
+	}
+	for i, side := range [4]string{"border-top", "border-bottom", "border-left", "border-right"} {
+		if v, ok := s.Attr(ns.FO, side); ok {
+			st.border[i] = borderValue(v)
+		}
+	}
+}
+
+// borderValue gives a border as written, "none" for none.
+func borderValue(v []byte) string {
+	b := strings.TrimSpace(string(v))
+	if b == "" || b == "none" || strings.HasPrefix(b, "0pt") || strings.HasPrefix(b, "0cm") || strings.HasPrefix(b, "0in") {
+		return "none"
+	}
+	if len(b) > 128 {
+		b = b[:128]
+	}
+	return b
 }
 
 // Resolved is a style with everything it inherits applied.
@@ -101,6 +137,12 @@ type Resolved struct {
 	// BoxHidden says a table style hides its sheet (table:display="false")
 	// or a drawing-page style its slide (presentation:visibility="hidden").
 	BoxHidden bool
+	// Border is the paragraph's border on each side (Top, Bottom, Left,
+	// Right) as written, "" or "none" for none.
+	Border [4]string
+	// HorizontalLine says the style is, or inherits from, LibreOffice's
+	// "Horizontal Line" paragraph style.
+	HorizontalLine bool
 }
 
 // Scope says which automatic styles apply: those of content.xml or those
@@ -253,7 +295,7 @@ func (set *Set) Read(s *xmlscan.Scanner, sc Scope) error {
 			switch local {
 			case "style", "default-style":
 				family := string(attr(s, ns.Style, "family"))
-				st := &Style{family: family, outline: -1}
+				st := &Style{family: family, outline: -1, name: string(attr(s, ns.Style, "name"))}
 				st.parent = string(attr(s, ns.Style, "parent-style-name"))
 				st.master = string(attr(s, ns.Style, "master-page-name"))
 				if v, ok := s.Attr(ns.Style, "default-outline-level"); ok {
@@ -287,6 +329,9 @@ func (set *Set) Read(s *xmlscan.Scanner, sc Scope) error {
 				}
 			case "paragraph-properties", "table-cell-properties", "section-properties", "graphic-properties", "page-layout-properties", "table-properties", "drawing-page-properties":
 				if cur != nil {
+					if local == "paragraph-properties" {
+						readBorders(s, cur)
+					}
 					if bg := background(s); bg.Set {
 						cur.background = bg
 						if cur.family == "page-layout" {
@@ -665,6 +710,14 @@ func apply(r *Resolved, st *Style) {
 	}
 	if st.master != "" {
 		r.Master = st.master
+	}
+	for i, b := range st.border {
+		if b != "" {
+			r.Border[i] = b
+		}
+	}
+	if st.family == "paragraph" && (st.name == "Horizontal_20_Line" || st.name == "Horizontal Line") {
+		r.HorizontalLine = true
 	}
 	if st.boxHidden != Unset {
 		r.BoxHidden = st.boxHidden == On

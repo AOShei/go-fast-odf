@@ -65,6 +65,18 @@ type ctxt struct {
 	hidden gofastcore.Hidden // reasons that apply to all of it
 	bg     style.Color       // what is behind it
 	list   *listCtx          // the list it is in, if any
+	// breaks says an empty bordered paragraph here may be a thematic
+	// break: the body of a text document and its sections, not cells,
+	// notes, frames, headers or footers.
+	breaks bool
+}
+
+// pendingBreak is the last thematic break emitted, which the paragraph
+// after it takes back if the two share a border (a box, not a rule).
+type pendingBreak struct {
+	dst *[]gofastcore.Block
+	idx int
+	seq int
 }
 
 type reader struct {
@@ -102,6 +114,11 @@ type reader struct {
 	unreadOrder []string
 	validations map[string]validation
 	delOrder    []string // deletion ids in document order
+
+	seq     int    // counts block-level elements
+	prevSeq int    // the seq of the last paragraph where breaks may be
+	prevSig string // its border
+	pend    *pendingBreak
 	tick        int
 }
 
@@ -189,7 +206,7 @@ func (r *reader) textBody(serr error) gofastcore.Part {
 	part := gofastcore.Part{Kind: gofastcore.PartBody, Number: 1, Blocks: []gofastcore.Block{}}
 	var body []gofastcore.Block
 	if serr == nil && r.s.Depth() == 3 {
-		r.blocks(ctxt{bg: r.set.PageBackground("")}, &body)
+		r.blocks(ctxt{bg: r.set.PageBackground(""), breaks: true}, &body)
 		serr = r.s.Err()
 	}
 	r.noteFailure(&part, "content.xml", serr)
@@ -318,6 +335,7 @@ func (r *reader) blocks(c ctxt, dst *[]gofastcore.Block) {
 		if k != xmlscan.Start || !r.alive() {
 			continue
 		}
+		r.seq++
 		space, local := s.Space(), string(s.Local())
 		switch space {
 		case ns.Text:
@@ -433,6 +451,7 @@ func (r *reader) section(c ctxt, dst *[]gofastcore.Block) {
 // blockAt reads the element whose Start is current as block content.
 func (r *reader) blockAt(c ctxt, dst *[]gofastcore.Block) {
 	s := &r.s
+	r.seq++
 	space, local := s.Space(), string(s.Local())
 	switch {
 	case space == ns.Text && local == "p":
@@ -598,6 +617,9 @@ func (r *reader) paragraph(c ctxt, heading bool, item *itemCtx, dst *[]gofastcor
 		b.Level = uint8(min(c.list.depth, 255))
 		b.Ordered = c.list.ordered()
 	}
+	if c.breaks && !heading && item == nil && c.list == nil {
+		r.thematicBreak(ps, b.Text == "" && len(p.after) == 0, dst)
+	}
 	if b.Text != "" {
 		if !r.emit(dst, b) {
 			return
@@ -609,6 +631,50 @@ func (r *reader) paragraph(c ctxt, heading bool, item *itemCtx, dst *[]gofastcor
 		r.stop(textCut)
 	}
 }
+
+// thematicBreak decides whether a paragraph of the body is a rule between
+// topics. ODF has no element for one; LibreOffice's AutoCorrect turns
+// "---" and Enter into an empty paragraph with only a bottom border (in
+// older versions, one in the style "Horizontal Line"). Such a paragraph
+// is a break, origin inferred, unless the paragraph before or after it
+// has the same border: paragraphs that share a border make a box.
+func (r *reader) thematicBreak(ps style.Resolved, empty bool, dst *[]gofastcore.Block) {
+	var sig string
+	bordered := false
+	for i, b := range ps.Border {
+		if b == "" {
+			b = "none"
+		}
+		bordered = bordered || b != "none"
+		if i > 0 {
+			sig += "|"
+		}
+		sig += b
+	}
+	if !bordered {
+		sig = ""
+	}
+	adjacent := sig != "" && r.prevSeq == r.seq-1 && r.prevSig == sig
+	if adjacent && r.pend != nil && r.pend.seq == r.prevSeq {
+		// The break before was the edge of a box after all.
+		d := r.pend.dst
+		if r.pend.idx < len(*d) && (*d)[r.pend.idx].Kind == gofastcore.KindThematicBreak {
+			*d = append((*d)[:r.pend.idx], (*d)[r.pend.idx+1:]...)
+			r.budget.Return(gofastcore.BlockCost)
+		}
+		r.pend = nil
+	}
+	rule := ps.HorizontalLine || bordered && ps.Border[style.Bottom] != "" && ps.Border[style.Bottom] != "none" &&
+		none(ps.Border[style.Top]) && none(ps.Border[style.Left]) && none(ps.Border[style.Right])
+	if empty && rule && !adjacent {
+		if r.emit(dst, gofastcore.Block{Kind: gofastcore.KindThematicBreak, Origin: gofastcore.OriginInferred}) {
+			r.pend = &pendingBreak{dst: dst, idx: len(*dst) - 1, seq: r.seq}
+		}
+	}
+	r.prevSeq, r.prevSig = r.seq, sig
+}
+
+func none(b string) bool { return b == "" || b == "none" }
 
 // whole adds reasons that apply to all of a block, taking them off its
 // spans, where they would say they apply only there.
