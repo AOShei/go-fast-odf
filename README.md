@@ -10,14 +10,27 @@ if err != nil { ... }
 fmt.Println(doc.Markdown())
 ```
 
-**Status: phase 1.** Text documents (`.odt`, templates, master documents) are read. Spreadsheets (`.ods`), presentations (`.odp`), the flat XML variants (`.fodt`, `.fods`, `.fodp`) and the command-line tool come in phase 2; decryption in phase 3. See `IMPLEMENTATION_PLAN.md`.
+**Status: phase 2.** Text documents (`.odt`), spreadsheets (`.ods`), presentations (`.odp`), their templates, and the flat XML variants (`.fodt`, `.fods`, `.fodp`) are read. Decryption comes in phase 3. See `IMPLEMENTATION_PLAN.md`.
 
 ## API
 
 - `Extract(ctx, r io.ReaderAt, size, opts)`, `ExtractFile(ctx, path, opts)`, `ExtractBytes(ctx, data, opts)`.
-- `Extractor{MaxArchiveMembers, MaxCells}` implements `gofastcore.Extractor`; its zero value is ready and safe for concurrent use.
+- `Extractor{MaxArchiveMembers, MaxCells}` implements `gofastcore.Extractor`; its zero value is ready and safe for concurrent use. `Formats()` is `odt ods odp fodt fods fodp`.
 
-The format is decided from the package (its `mimetype` member, the manifest's root entry, or the body element of `content.xml`), never from the file name.
+The format is decided from the file (a package's `mimetype` member or manifest root entry, a flat file's `office:mimetype`, or the body element of the content), never from the file name. A flat file is reported as `fodt`, `fods` or `fodp` with the flat-XML media type, whatever kind its `office:mimetype` names.
+
+## Command
+
+`go install github.com/AOShei/go-fast-odf/cmd/gofastodf@latest`
+
+```
+gofastodf [flags] file-or-directory...
+  -format json|markdown|text   -parts 2-5   -images meta|data|none
+  -spans  -cells  -furniture  -part-markers  -exclude-hidden[=reasons]
+  -max-cells N  -max-decoded-bytes N  -max-text-bytes N  -o file  -quiet
+```
+
+Documents go to standard output; warnings worth a person's attention (hidden text, errors) go to standard error; the exit status is 1 if any input could not be read.
 
 ## How a text document maps
 
@@ -47,6 +60,34 @@ One part of kind `body`, numbered 1, and, when the document stores values it nev
 
 `Loc.Anchor` is the paragraph's `xml:id` (for headings also `text:id`). With `Options.Spans`, spans carry bold, italic, underline, strike, superscript and subscript set by a span's own text style, and link targets of `text:a`.
 
+## How a spreadsheet maps
+
+One part of kind `sheet` per `table:table`, `Name` the sheet name, `Hidden` `invisible` when its table style says `table:display="false"`.
+
+- **Cells** are read with the text reader (spans, hidden text, links, comments). Repeated rows and columns are counted, not stored, while empty; repeated cells with content are written out, bounded by `MaxCells` and the text budget. Coordinates are capped at 65,536 columns and 16 million rows.
+- **Used regions** are tables, `Origin` `inferred`, `Loc.Range` in A1 notation (`A1:C3`): rows with cells that follow one another (or that a merged cell spans) form a band, and within a band touching columns with cells form a region. A region whose rectangle is more than four times its cells (plus 1,024) is written as one table per run of cells in a row, with `odf.region_split`.
+- **Text** is what the cell displays (its paragraphs joined with `\n`); a cell with a value and no paragraph shows the value. **Dates and times stored as values are written in ISO 8601** (`2026-03-04`, `14:30:00` from `PT14H30M00S`), whatever the display, as core asks.
+- **Merged cells** (`number-columns-spanned`, `number-rows-spanned`) are `Merges`; overlapping merges after the first are dropped.
+- With `Options.Cells`, `Table.Cells` has each cell's formula (`table:formula` as written, never evaluated), and its type and stored value where the text does not show the value (`number`, `date`, `bool`). With `Options.Spans`, a cell's link is its `href`.
+- **Hidden**: collapsed or filtered rows and columns are `HiddenCells` regions; a cell's style is checked for `display:none`, a colour near the cell's background, and tiny text.
+- **Comments** (`office:annotation` in a cell) are `note` blocks of type `comment` with `Loc.Range` the cell.
+- **Validation lists** (`cell-content-is-in-list`) are `note` blocks of type `choices` after the tables, `Loc.Range` the bounding range of the cells that use the validation, `field` its name. A list of values gives one per line; a list taken from cells gives `=` and the reference as the file writes it.
+- **Named ranges, named expressions and database ranges** (workbook-wide and sheet-local, the latter as `Sheet!name`) go to the `stored` part as `name: address` paragraphs with `stored=defined_name`; database ranges also have `Attrs["kind"]="database_range"`.
+- Shapes on a sheet (`table:shapes`) give their text and pictures after the tables.
+
+## How a presentation maps
+
+One part of kind `slide` per `draw:page`. `Name` is the text of the title frame (`presentation:class="title"`), else the page's `draw:name`. `Hidden` `invisible` when the page's drawing-page style says `presentation:visibility="hidden"`.
+
+- Frames, shapes and groups are put in reading order: the title first, then from top to bottom (`svg:y`) and, at one height, left to right (`svg:x`); an item with no position keeps the place of the one before it.
+- The title's paragraphs are `heading` level 1. Footer, date-time and page-number placeholders are `footer` blocks, header placeholders `header` blocks. Other text is paragraphs and list items as in a text document.
+- **Speaker notes** (`presentation:notes`) are one `note` block of type `speaker` at the end of the slide.
+- Text is compared with the frame's fill (graphic or presentation style), else the slide's background, else white.
+
+## Flat files
+
+A flat file is one XML document (`office:document`) holding metadata, styles, master pages and body. It is read like a package whose streams are that document. Pictures held in it (`office:binary-data`) are decoded (up to 64 MiB of base64 each, charged to `MaxDecodedBytes`); their `Image.ID` is `inline-` and the first 16 hex digits of the SHA-256 of their bytes, so equal pictures have equal IDs; their MIME type and size come from decoding PNG, JPEG and GIF headers.
+
 ## Hidden text
 
 `HiddenChecked` is `invisible+tiny+low_contrast+invisible_chars`. All checks are cheap and always run; `Options.DeepHidden` changes nothing.
@@ -59,7 +100,7 @@ One part of kind `body`, numbered 1, and, when the document stores values it nev
 | `transparent` | LibreOffice's `loext:opacity` of 0 (found, not listed as checked) |
 | `invisible_chars` | core's scan, on every block |
 
-Limits of the checks: text whose colour is the program's choice (`style:use-window-font-color`) is not compared; the page background is that of the first master page; frames and shapes drawn over text are not compared (`occluded` is not checked); Asian and complex-script font sizes are not read.
+Limits of the checks: text whose colour is the program's choice (`style:use-window-font-color`) is not compared; the page background is that of the first master page; frames and shapes drawn over text are not compared (`occluded` is not checked); Asian and complex-script font sizes are not read. In a spreadsheet the cell style's colour and size are judged for the cell as a whole, and a paragraph style inside the cell is judged on its own; a cell's text is not compared with pictures or shapes over it. On a slide, text is compared with its own frame's fill and the slide's background, not with pictures or shapes behind the frame.
 
 ## Warnings
 
@@ -70,6 +111,7 @@ Codes of this library:
 | Code | What happened |
 |---|---|
 | `odf.unread_content` | The document holds content this version does not read: embedded objects, form controls, plug-ins. The message counts them |
+| `odf.region_split` | An area of a sheet with thinly spread cells was written as one table per run of cells in a row |
 | `odf.part_damaged` | A supporting stream (manifest, styles, metadata) could not be read to its end; what was read is used |
 | `odf.property_truncated` | A metadata value was cut at 64 KiB, or keywords or user-defined properties beyond 256 were left out |
 | `odf.control_characters_removed` | Control characters with no meaning as text were removed |
@@ -82,9 +124,17 @@ Codes of this library:
 
 Every limit of `gofastcore.Options.Limits` applies. `MaxDecodedBytes` (default 2 GiB) is charged per byte read from the archive and shared with embedded documents. `MaxTextBytes` (default 256 MiB) is charged for every block (`BlockCost` plus its text and marker), every table cell (`CellCost` plus its text) and link targets; a paragraph stops growing when it would exceed what is left, so `text:s` with a huge count cannot expand past the budget. `Extractor.MaxCells` (default 20 million) bounds table cells; repetition attributes are capped at 2^20 rows or cells each and tables at 16,384 columns. The XML scanner refuses DTDs and bounds nesting depth and token size. A cut archive is read through the members' own headers (`input.repaired`).
 
+## Fuzzing
+
+```
+go test -run '^$' -fuzz '^FuzzContent$' -fuzztime=20s .
+```
+
+Targets: `FuzzExtract` (whole files), `FuzzContent`, `FuzzSheet`, `FuzzSlides`, `FuzzStyles`, `FuzzMeta`, `FuzzManifest`, `FuzzFlat`. A target's input is the inside of a stream's root element (the target writes the root and its namespace declarations), and the packages it builds store their members uncompressed. Both matter: the fuzzing engine minimises each input that finds new coverage at a cost that grows with the square of its length, and with whole streams of 1–2 KB in compressed packages a worker spent nearly all its time minimising. `TestMutations` runs a seeded set of mutations of every target under plain `go test`.
+
 ## Not read (yet)
 
-Spreadsheets, presentations, drawings, flat XML files; decryption; embedded objects (formulas, charts, OLE) beyond their replacement picture; form controls; pictures held inline in a flat file; change-tracked insertions are not marked in the text; the OpenOffice 1.x formats (`.sxw`).
+Drawings (`.odg`), charts, formulas and databases as documents; decryption; embedded objects (formulas, charts, OLE) beyond their replacement picture; form controls; change-tracked insertions are not marked in the text; text placed off a slide is not flagged (`off_page` is not checked); master-page text of slides; the OpenOffice 1.x formats (`.sxw`).
 
 ## Provenance
 

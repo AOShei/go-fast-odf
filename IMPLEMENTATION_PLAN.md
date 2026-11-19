@@ -45,22 +45,28 @@ Status legend: **done**, **partial**, **todo**.
 | Unit tests inside internal packages (style resolution, number formats, odpkg Resolve/IsExternal) | todo: covered only through the public API |
 | Table cell details (`Table.Cells` hrefs with Options.Spans) | todo |
 
-Fuzzing note: in the run-1 sandbox, `go test -fuzz` stalled after a few
-executions for every target (a trivial target ran at ~1,500 execs/s), so
-the fuzz targets' work is also done by `TestMutations`, a seeded mutation
-run under plain `go test`. Run `go test -fuzz=FuzzContent -fuzztime=20s`
-(and FuzzStyles, FuzzMeta, FuzzManifest, FuzzExtract) on a normal machine.
+Fuzzing (fixed in run 2): the stall seen in run 1 was the engine minimising
+each new-coverage input, which costs the square of its length; inputs were
+whole 1-2 KB streams in deflated packages. Inputs are now the inside of a
+stream's root element, the packages store their members, and the scanner's
+window is sized from the member. Measured 20 s each: 30,000 to 180,000
+execs/s per target.
 
 ### Phase 2: spreadsheets, presentations, flat XML, CLI (run 2)
 
 | Item | Status |
 |---|---|
-| ods: sheets as parts, used regions as tables with `Loc.Range`, repeated rows/columns bounded, hidden rows/columns/sheets, validations as `choices` notes, named ranges to the stored part | todo |
-| odp: slides as parts, `Name` = title, speaker notes as `note`, hidden slides | todo |
-| Flat XML (.fodt, .fods, .fodp): one XML stream, embedded `office:binary-data` images | todo |
-| `cmd/gofastodf` printing JSON like gofastooxml | todo |
+| Fuzz stall fixed; fuzz targets for every reader | done |
+| ods: sheets as parts, used regions as tables with `Loc.Range`, merges, repeated rows/columns bounded, hidden rows/columns/sheets, ISO dates and times, formulas/types/values in `Table.Cells`, validations as `choices` notes, annotations as notes, named and database ranges to the stored part | done |
+| odp: slides as parts, `Name` = title, frames in reading order, speaker notes as `note`, hidden slides, footer placeholders as `footer` | done |
+| Flat XML (.fodt, .fods, .fodp): one XML stream, `office:binary-data` images | done |
+| `cmd/gofastodf` printing JSON, Markdown or text like gofastooxml | done |
+| ods: header rows of regions (print titles), declared database ranges as native tables | todo |
+| ods: cells' formulas without cached values (warning like ooxml's formula_no_value) | todo |
+| odp: off-slide frames (`off_page`), master-page text, tables in frames checked with a real slide test | todo |
 | Embedded objects (`draw:object` formulas as `formula`, charts, `draw:object-ole` as children) | todo |
 | Form controls and their values | todo |
+| Unit tests inside internal packages; Table.Cells hrefs in text-document tables | todo |
 
 ### Phase 3: encryption and polish
 
