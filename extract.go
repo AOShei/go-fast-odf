@@ -228,7 +228,7 @@ func (e *Extractor) Extract(ctx context.Context, r io.ReaderAt, size int64, opts
 	if err != nil {
 		return nil, wrap(err)
 	}
-	defer func() { decode.Take(allowed - pkg.Remaining()) }()
+	defer pkg.Sync(decode)
 
 	mime := pkg.MIME()
 	format, known := kinds[mime]
@@ -371,6 +371,7 @@ func (e *Extractor) Extract(ctx context.Context, r io.ReaderAt, size int64, opts
 			doc.Parts = append(doc.Parts, p)
 		}
 	}
+	doc.Children = res.Children
 	if whole && res.Stored != nil {
 		doc.Parts = append(doc.Parts, *res.Stored)
 	}

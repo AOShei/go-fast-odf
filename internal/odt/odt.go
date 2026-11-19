@@ -52,6 +52,8 @@ type Result struct {
 	// the slides of a presentation. Stored is the stored part, or nil.
 	Parts  []gofastcore.Part
 	Stored *gofastcore.Part
+	// Children are the embedded documents handed to Options.Child.
+	Children []*gofastcore.Document
 	// Warnings concern the document as a whole.
 	Warnings []gofastcore.Warning
 	// ActiveContent counts scripts, macro links and event handlers.
@@ -119,7 +121,12 @@ type reader struct {
 	prevSeq int    // the seq of the last paragraph where breaks may be
 	prevSig string // its border
 	pend    *pendingBreak
-	tick    int
+
+	seenObjects  map[string]bool
+	children     []*gofastcore.Document
+	controls     map[string]*control
+	controlOrder []string
+	tick         int
 }
 
 // Read reads content.xml (and styles.xml for headers and footers).
@@ -133,6 +140,9 @@ func Read(ctx context.Context, pkg *odpkg.Package, set *style.Set, opts *gofastc
 		images:    map[string]imageInfo{},
 		dataSent:  map[string]bool{},
 		unread:    map[string]int{},
+
+		seenObjects: map[string]bool{},
+		controls:    map[string]*control{},
 	}
 	r.lists.init()
 	res := &Result{}
@@ -172,6 +182,8 @@ func Read(ctx context.Context, pkg *odpkg.Package, set *style.Set, opts *gofastc
 		res.Warnings = append(res.Warnings, gofastcore.Warning{Code: "odf.control_characters_removed", Severity: gofastcore.SeverityInfo,
 			Message: fmt.Sprintf("%d control characters removed from the text", r.removed)})
 	}
+	r.unplacedControls()
+	res.Children = r.children
 	if len(r.userVars) > 0 {
 		st := &gofastcore.Part{Kind: gofastcore.PartStored, Number: len(res.Parts) + 1, Hidden: gofastcore.HiddenInvisible, Blocks: r.userVars}
 		st.MarkHidden()
@@ -374,9 +386,7 @@ func (r *reader) blocks(c ctxt, dst *[]gofastcore.Block) {
 		case ns.Office:
 			switch local {
 			case "forms":
-				if r.hasForms() {
-					r.addUnread("sets of form controls")
-				}
+				r.readForms()
 			case "event-listeners", "scripts":
 				if style.HasChildren(s) {
 					r.active++
@@ -391,22 +401,6 @@ func (r *reader) blocks(c ctxt, dst *[]gofastcore.Block) {
 			s.Skip()
 		default:
 			r.blocks(c, dst)
-		}
-	}
-}
-
-// hasForms reads past office:forms and reports whether it held a form.
-func (r *reader) hasForms() bool {
-	s := &r.s
-	depth := s.Depth()
-	found := false
-	for {
-		k := s.Next()
-		if k == xmlscan.EOF || k == xmlscan.End && s.Depth() < depth {
-			return found
-		}
-		if k == xmlscan.Start && s.Space() == ns.Form && string(s.Local()) == "form" {
-			found = true
 		}
 	}
 }

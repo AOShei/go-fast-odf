@@ -92,6 +92,7 @@ type Package struct {
 	budget    atomic.Int64
 	ambiguous int
 	recovered *Recovery
+	synced    int64       // the budget as it stood at the last Sync
 	flat      io.ReaderAt // a flat file, or nil
 	flatSize  int64
 	manifest  map[string]Entry
@@ -130,6 +131,7 @@ func Open(r io.ReaderAt, size int64, lim Limits) (*Package, error) {
 		manifest:  map[string]Entry{},
 	}
 	p.budget.Store(lim.MaxDecodedBytes)
+	p.synced = lim.MaxDecodedBytes
 	for _, f := range zr.File {
 		if strings.HasSuffix(f.Name, "/") {
 			continue // a directory entry
@@ -302,6 +304,7 @@ func OpenFlat(r io.ReaderAt, size int64, lim Limits) (*Package, error) {
 			mime, _ := s.Attr(ns.Office, "mimetype")
 			p := &Package{flat: r, flatSize: size, mime: clean.Label(string(mime)), manifest: map[string]Entry{}}
 			p.budget.Store(lim.MaxDecodedBytes)
+			p.synced = lim.MaxDecodedBytes
 			return p, nil
 		case xmlscan.EOF:
 			return nil, fmt.Errorf("%w: not XML", ErrNotZip)
@@ -342,6 +345,27 @@ func (p *Package) Size(name string) int64 {
 		return -1
 	}
 	return int64(f.UncompressedSize64)
+}
+
+// Sync settles the package's count of decompressed bytes with the shared
+// budget d (gofastcore.DecodeBudget): what was read since the last Sync
+// is taken from d, and anything d has lost meanwhile (to an embedded
+// document, which takes what it used from d when it closes) is taken from
+// the package's own count. It is called before an embedded document is
+// handed on, after it, and at the end.
+func (p *Package) Sync(d interface {
+	Take(int64) bool
+	Left() int64
+}) {
+	if d == nil {
+		return
+	}
+	now := p.budget.Load()
+	d.Take(p.synced - now)
+	if left := d.Left(); left < now {
+		p.budget.Store(left)
+	}
+	p.synced = p.budget.Load()
 }
 
 // Remaining returns how many decompressed bytes may still be read.

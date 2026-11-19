@@ -25,6 +25,9 @@ const namespaces = ` xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:
 	` xmlns:meta="urn:oasis:names:tc:opendocument:xmlns:meta:1.0"` +
 	` xmlns:svg="urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0"` +
 	` xmlns:presentation="urn:oasis:names:tc:opendocument:xmlns:presentation:1.0"` +
+	` xmlns:math="http://www.w3.org/1998/Math/MathML"` +
+	` xmlns:chart="urn:oasis:names:tc:opendocument:xmlns:chart:1.0"` +
+	` xmlns:form="urn:oasis:names:tc:opendocument:xmlns:form:1.0"` +
 	` xmlns:loext="urn:org:documentfoundation:names:experimental:office:xmlns:loext:1.0"` +
 	` xmlns:manifest="urn:oasis:names:tc:opendocument:xmlns:manifest:1.0"`
 

@@ -100,6 +100,12 @@ var (
 		`<office:body><office:text><text:p><draw:frame><draw:text-box><text:p>b</text:p></draw:text-box><draw:image xlink:href="P/x.png"/><svg:desc>d</svg:desc></draw:frame>` +
 			`<text:drop-down><text:label text:value="a"/>a</text:drop-down><text:s text:c="9"/></text:p><text:user-field-decls><text:user-field-decl text:name="a" office:string-value="b"/></text:user-field-decls></office:text></office:body>`,
 	}
+	objectSeeds = []string{
+		`<office:body><office:text><office:forms><form:form><form:listbox form:id="a" form:name="n"><form:option form:label="x" form:current-selected="true"/></form:listbox><form:hidden form:id="h" form:value="v"/></form:form></office:forms>` +
+			`<text:p><draw:control draw:control="a"/><draw:frame><draw:object><math:math><math:mfrac><math:mi>a</math:mi><math:msqrt><math:mn>2</math:mn></math:msqrt></math:mfrac><math:annotation encoding="StarMath 5.0">a over sqrt 2</math:annotation></math:math></draw:object></draw:frame>` +
+			`<draw:frame><draw:object><chart:chart chart:class="chart:line"><chart:title><text:p>t</text:p></chart:title><table:table><table:table-row table:number-rows-repeated="2"><table:table-cell table:number-columns-repeated="2"><text:p>1</text:p></table:table-cell></table:table-row></table:table></chart:chart></draw:object></draw:frame></text:p>` +
+			`<text:p text:style-name="Horizontal_20_Line"/></office:text></office:body>`,
+	}
 	stylesSeeds = []string{
 		`<office:styles><text:outline-style><text:outline-level-style text:level="1" style:num-format="1"/></text:outline-style></office:styles>` +
 			`<office:automatic-styles><style:page-layout style:name="p"><style:page-layout-properties fo:background-color="#000000"/></style:page-layout></office:automatic-styles>` +
@@ -131,7 +137,9 @@ func richOpts() *gofastcore.Options {
 
 // FuzzContent fuzzes the content of a text document: the body reader and
 // automatic styles.
-func FuzzContent(f *testing.F) { fuzzStream(f, textMIME, contentStream, textSeeds, richOpts) }
+func FuzzContent(f *testing.F) {
+	fuzzStream(f, textMIME, contentStream, append(append([]string(nil), textSeeds...), objectSeeds...), richOpts)
+}
 
 // FuzzStyles fuzzes styles.xml: styles, list styles, master pages.
 func FuzzStyles(f *testing.F) { fuzzStream(f, textMIME, stylesStream, stylesSeeds, noOpts) }
@@ -217,6 +225,7 @@ type fuzzCase struct {
 
 var fuzzCases = []fuzzCase{
 	{textMIME, contentStream, textSeeds},
+	{textMIME, contentStream, objectSeeds},
 	{textMIME, stylesStream, stylesSeeds},
 	{textMIME, metaStream, metaSeeds},
 	{textMIME, manifestStream, manifestSeeds},

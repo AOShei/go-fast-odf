@@ -51,8 +51,7 @@ func (r *reader) drawing(c ctxt, dst *[]gofastcore.Block) {
 	case "g":
 		r.drawChildren(c, dst)
 	case "control":
-		r.addUnread("form controls")
-		s.Skip()
+		r.placeControl(c, dst)
 	case "image":
 		r.imageAt(c, "", dst)
 	default:
@@ -88,6 +87,8 @@ func (r *reader) frame(c ctxt, dst *[]gofastcore.Block) {
 	var title, desc string
 	var img *gofastcore.Block
 	imgAt := -1
+	frameName := clean.Name(r.attr(ns.Draw, "name"))
+	replaced := false // an object of the frame became blocks of its own
 	depth := s.Depth()
 	for {
 		k := s.Next()
@@ -115,11 +116,9 @@ func (r *reader) frame(c ctxt, dst *[]gofastcore.Block) {
 				*dst = append(*dst, tmp[1:]...)
 			}
 		case space == ns.Draw && (local == "object" || local == "object-ole"):
-			r.addUnread("embedded objects")
-			if href := r.attr(ns.XLink, "href"); odpkg.IsExternal(href) {
-				r.external++
+			if r.object(c, frameName, dst) {
+				replaced = true
 			}
-			s.Skip()
 		case space == ns.Draw && local == "applet":
 			r.active++
 			s.Skip()
@@ -138,6 +137,11 @@ func (r *reader) frame(c ctxt, dst *[]gofastcore.Block) {
 		}
 	}
 	if img == nil {
+		return
+	}
+	if replaced {
+		// The picture is the object's drawing of itself, given already.
+		r.budget.Return(cost(img))
 		return
 	}
 	alt := desc

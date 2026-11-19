@@ -137,9 +137,7 @@ func (r *reader) slide(n int) gofastcore.Part {
 				items = append(items, it)
 			}
 		case space == ns.Office && local == "forms":
-			if r.hasForms() {
-				r.addUnread("sets of form controls")
-			}
+			r.readForms()
 		default:
 			s.Skip()
 		}

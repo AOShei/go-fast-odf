@@ -320,9 +320,7 @@ func (r *reader) sheetBody(sh *sheetIn, row *int, sheetName string) {
 		case space == ns.Table && local == "shapes":
 			r.blocks(ctxt{bg: style.White}, &sh.extra)
 		case space == ns.Office && local == "forms":
-			if r.hasForms() {
-				r.addUnread("sets of form controls")
-			}
+			r.readForms()
 		default:
 			s.Skip()
 		}
