@@ -5,6 +5,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"unsafe"
 
 	"github.com/AOShei/go-fast-core"
 	"github.com/AOShei/go-fast-odf/internal/clean"
@@ -38,6 +39,9 @@ type sheetCell struct {
 	hidden     gofastcore.Hidden
 	more       *cellMore
 }
+
+// heldCell is what a sheetCell takes in memory, in bytes.
+const heldCell = int64(unsafe.Sizeof(sheetCell{}))
 
 type cellMore struct {
 	formula string
@@ -455,15 +459,17 @@ func (r *reader) sheetRow(sh *sheetIn, row *int) {
 			break // the rest of the row is passed over by the caller
 		}
 	}
-	// The row's cells, once for every row it stands for. Each is charged
-	// what a cell costs now, so that a few bytes repeated cannot fill
-	// memory before the tables are made; the tables charge in full.
+	// The row's cells, once for every row it stands for. The cells a
+	// sheet holds before its tables are made are bounded by what they
+	// take in memory (heldCell bytes each) against the text the document
+	// may still hold, so that a few bytes repeated cannot fill memory;
+	// the tables then charge the budget in full.
 	for rr := top; rr < *row && len(cells) > 0; rr++ {
 		if r.maxCells >= 0 && r.cells+int64(len(cells)) > r.maxCells {
 			r.stop("the limit on table cells was reached; the workbook is cut off there")
 			return
 		}
-		if r.budget != nil && int64(len(sh.cells)+len(cells))*gofastcore.CellCost > r.budget.Left() {
+		if r.budget != nil && int64(len(sh.cells)+len(cells))*heldCell > r.budget.Left() {
 			r.stop(textCut)
 			return
 		}
