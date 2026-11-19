@@ -47,7 +47,7 @@ func (r *reader) drawing(c ctxt, dst *[]gofastcore.Block) {
 	case "g":
 		r.drawChildren(c, dst)
 	case "control":
-		r.unread["form controls"]++
+		r.addUnread("form controls")
 		s.Skip()
 	case "image":
 		r.imageAt(c, "", dst)
@@ -111,7 +111,7 @@ func (r *reader) frame(c ctxt, dst *[]gofastcore.Block) {
 				*dst = append(*dst, tmp[1:]...)
 			}
 		case space == ns.Draw && (local == "object" || local == "object-ole"):
-			r.unread["embedded objects"]++
+			r.addUnread("embedded objects")
 			if href := r.attr(ns.XLink, "href"); odpkg.IsExternal(href) {
 				r.external++
 			}
@@ -123,7 +123,7 @@ func (r *reader) frame(c ctxt, dst *[]gofastcore.Block) {
 			if href := r.attr(ns.XLink, "href"); href != "" {
 				r.external++
 			}
-			r.unread["plug-ins and floating frames"]++
+			r.addUnread("plug-ins and floating frames")
 			s.Skip()
 		case space == ns.SVG && local == "title":
 			title = r.plain(s.AppendText(nil))

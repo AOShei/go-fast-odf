@@ -224,6 +224,7 @@ func (r *reader) trackedChanges() {
 			r.readDeletion(d)
 			if _, dup := r.deletions[id]; !dup {
 				r.deletions[id] = d
+				r.delOrder = append(r.delOrder, id)
 			}
 		case s.Space() == ns.Text && (string(s.Local()) == "insertion" || string(s.Local()) == "format-change"):
 			s.Skip()
@@ -295,14 +296,9 @@ func (r *reader) useDeletion(id string, dst *[]gofastcore.Block) {
 // deletionOrder lists the deletions not yet placed, in document order.
 func (r *reader) deletionOrder() []string {
 	var ids []string
-	for id := range r.deletions {
+	for _, id := range r.delOrder {
 		if !r.usedDel[id] {
 			ids = append(ids, id)
-		}
-	}
-	for i := 1; i < len(ids); i++ {
-		for j := i; j > 0 && r.deletions[ids[j]].order < r.deletions[ids[j-1]].order; j-- {
-			ids[j], ids[j-1] = ids[j-1], ids[j]
 		}
 	}
 	return ids

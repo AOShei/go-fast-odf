@@ -385,10 +385,12 @@ func hiddenInMetadata(m *gofastcore.Metadata) bool {
 			return true
 		}
 	}
+	// Every entry is looked at, with no early return, so that the work
+	// done does not depend on the map's order.
+	any := false
 	for k, v := range m.Extra {
-		if found(k) || found(v) {
-			return true
-		}
+		any = found(k) || any
+		any = found(v) || any
 	}
-	return false
+	return any
 }

@@ -94,10 +94,12 @@ type reader struct {
 	images   map[string]imageInfo
 	dataSent map[string]bool
 
-	external int
-	active   int
-	unread   map[string]int
-	tick     int
+	external    int
+	active      int
+	unread      map[string]int
+	unreadOrder []string
+	delOrder    []string // deletion ids in document order
+	tick        int
 }
 
 // Read reads content.xml (and styles.xml for headers and footers).
@@ -197,11 +199,21 @@ func Read(ctx context.Context, pkg *odpkg.Package, set *style.Set, opts *gofastc
 		res.Warnings = append(res.Warnings, gofastcore.Warning{Code: gofastcore.WarnInputExternalReference, Severity: gofastcore.SeverityInfo,
 			Message: fmt.Sprintf("%d references to files or addresses outside the document (linked pictures, linked sections); nothing was fetched", r.external)})
 	}
-	for _, what := range sortedKeys(r.unread) {
+	for _, what := range r.unreadOrder {
 		res.Warnings = append(res.Warnings, gofastcore.Warning{Code: WarnUnreadContent, Severity: gofastcore.SeverityWarning,
 			Message: fmt.Sprintf("%d %s not read", r.unread[what], what)})
 	}
 	return res, nil
+}
+
+// addUnread counts content of a kind that is not read. The kinds are
+// kept in the order met, not in a map's order, so that the output and
+// the code paths taken do not vary from run to run.
+func (r *reader) addUnread(what string) {
+	if r.unread[what] == 0 {
+		r.unreadOrder = append(r.unreadOrder, what)
+	}
+	r.unread[what]++
 }
 
 // noteFailure turns the error that ended a stream into a warning.
@@ -214,19 +226,6 @@ func (r *reader) noteFailure(part *gofastcore.Part, name string, err error) {
 	default:
 		part.Warn(gofastcore.SeverityError, gofastcore.WarnPartFailed, clean.Label(name+" could not be read to its end: "+err.Error()))
 	}
-}
-
-func sortedKeys(m map[string]int) []string {
-	out := make([]string, 0, len(m))
-	for k := range m {
-		out = append(out, k)
-	}
-	for i := 1; i < len(out); i++ {
-		for j := i; j > 0 && out[j] < out[j-1]; j-- {
-			out[j], out[j-1] = out[j-1], out[j]
-		}
-	}
-	return out
 }
 
 // stop ends the reading because a limit was reached.
@@ -337,7 +336,7 @@ func (r *reader) blocks(c ctxt, dst *[]gofastcore.Block) {
 			switch local {
 			case "forms":
 				if r.hasForms() {
-					r.unread["sets of form controls"]++
+					r.addUnread("sets of form controls")
 				}
 			case "event-listeners", "scripts":
 				if style.HasChildren(s) {

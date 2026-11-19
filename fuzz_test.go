@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"io"
 	"math/rand"
 	"testing"
 	"time"
@@ -14,6 +15,14 @@ import (
 // The fuzz targets bound what one input may cost (decompressed bytes,
 // text, cells) so that a run holds little memory, and check every
 // document they get with Validate.
+//
+// A target's input is the inside of one stream's root element, not the
+// whole stream: the target writes the root with its namespace
+// declarations around it. That keeps inputs to a few hundred bytes. It
+// matters because the fuzzing engine minimises every input that finds new
+// coverage, at a cost that grows with the square of its length; with
+// inputs of two kilobytes (the declarations alone are one) a worker spent
+// its whole time minimising and ran a few inputs a minute.
 
 var fuzzLimits = gofastcore.Limits{MaxDecodedBytes: 8 << 20, MaxTextBytes: 4 << 20}
 
@@ -38,14 +47,138 @@ func fuzzExtract(t *testing.T, data []byte, opts *gofastcore.Options) {
 	}
 }
 
+// stream is a stream the fuzz targets write into a package.
+type stream struct {
+	name, root string
+}
+
+var (
+	contentStream  = stream{"content.xml", "office:document-content"}
+	stylesStream   = stream{"styles.xml", "office:document-styles"}
+	metaStream     = stream{"meta.xml", "office:document-meta"}
+	manifestStream = stream{"META-INF/manifest.xml", "manifest:manifest"}
+)
+
+// fuzzPackage puts a fragment, wrapped in its stream's root element, in a
+// sound package of the given media type.
+//
+// The members are stored, not compressed: a compressor costs most of a
+// megabyte to set up, and an input costs it each time.
+func fuzzPackage(t testing.TB, mime string, st stream, data []byte) []byte {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	create := func(name string) io.Writer {
+		w, _ := zw.CreateHeader(&zip.FileHeader{Name: name, Method: zip.Store})
+		return w
+	}
+	w := create("mimetype")
+	w.Write([]byte(mime))
+	if st.name != "content.xml" {
+		w = create("content.xml")
+		w.Write([]byte(content("", `<text:p>body</text:p>`)))
+	}
+	w = create(st.name)
+	w.Write([]byte("<" + st.root + namespaces + ">"))
+	w.Write(data)
+	w.Write([]byte("</" + st.root + ">"))
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
+}
+
+// Seeds: short fragments, each showing a few features.
+var (
+	textSeeds = []string{
+		`<office:automatic-styles><style:style style:name="H" style:family="text"><style:text-properties text:display="none" fo:color="#fff"/></style:style></office:automatic-styles>` +
+			`<office:body><office:text><text:p>a <text:span text:style-name="H">b</text:span></text:p><text:section text:display="none"><text:h>c</text:h></text:section></office:text></office:body>`,
+		`<office:automatic-styles><text:list-style style:name="L"><text:list-level-style-number text:level="1" style:num-format="i"/></text:list-style></office:automatic-styles>` +
+			`<office:body><office:text><text:list text:style-name="L"><text:list-item><text:p>a</text:p><text:list><text:list-item><text:p>b</text:p></text:list-item></text:list></text:list-item></text:list></office:text></office:body>`,
+		`<office:body><office:text><table:table><table:table-row table:number-rows-repeated="5"><table:table-cell table:number-columns-spanned="2"><text:p>x</text:p></table:table-cell></table:table-row></table:table></office:text></office:body>`,
+		`<office:body><office:text><text:tracked-changes><text:changed-region text:id="c"><text:deletion><text:p>g</text:p></text:deletion></text:changed-region></text:tracked-changes>` +
+			`<text:p>a<text:change text:change-id="c"/><text:note><text:note-citation>1</text:note-citation><text:note-body><text:p>n</text:p></text:note-body></text:note><office:annotation><text:p>c</text:p></office:annotation></text:p></office:text></office:body>`,
+		`<office:body><office:text><text:p><draw:frame><draw:text-box><text:p>b</text:p></draw:text-box><draw:image xlink:href="P/x.png"/><svg:desc>d</svg:desc></draw:frame>` +
+			`<text:drop-down><text:label text:value="a"/>a</text:drop-down><text:s text:c="9"/></text:p><text:user-field-decls><text:user-field-decl text:name="a" office:string-value="b"/></text:user-field-decls></office:text></office:body>`,
+	}
+	stylesSeeds = []string{
+		`<office:styles><text:outline-style><text:outline-level-style text:level="1" style:num-format="1"/></text:outline-style></office:styles>` +
+			`<office:automatic-styles><style:page-layout style:name="p"><style:page-layout-properties fo:background-color="#000000"/></style:page-layout></office:automatic-styles>` +
+			`<office:master-styles><style:master-page style:name="S" style:page-layout-name="p"><style:header><text:p>h</text:p></style:header></style:master-page></office:master-styles>`,
+	}
+	metaSeeds = []string{
+		`<office:meta><dc:title>t</dc:title><meta:keyword>k</meta:keyword><meta:user-defined meta:name="n">v</meta:user-defined><meta:creation-date>2026-01-01T00:00:00</meta:creation-date></office:meta>`,
+	}
+	manifestSeeds = []string{
+		`<manifest:file-entry manifest:full-path="/" manifest:media-type="` + textMIME + `"/>` +
+			`<manifest:file-entry manifest:full-path="content.xml"><manifest:encryption-data><manifest:algorithm manifest:algorithm-name="x"/></manifest:encryption-data></manifest:file-entry>`,
+	}
+)
+
+func fuzzStream(f *testing.F, mime string, st stream, seeds []string, opts func() *gofastcore.Options) {
+	for _, s := range seeds {
+		f.Add([]byte(s))
+	}
+	f.Fuzz(func(t *testing.T, data []byte) {
+		fuzzExtract(t, fuzzPackage(t, mime, st, data), opts())
+	})
+}
+
+func noOpts() *gofastcore.Options { return nil }
+
+func richOpts() *gofastcore.Options {
+	return &gofastcore.Options{Spans: true, Cells: true, Images: gofastcore.ImagesData}
+}
+
+// FuzzContent fuzzes the content of a text document: the body reader and
+// automatic styles.
+func FuzzContent(f *testing.F) { fuzzStream(f, textMIME, contentStream, textSeeds, richOpts) }
+
+// FuzzStyles fuzzes styles.xml: styles, list styles, master pages.
+func FuzzStyles(f *testing.F) { fuzzStream(f, textMIME, stylesStream, stylesSeeds, noOpts) }
+
+// FuzzMeta fuzzes meta.xml.
+func FuzzMeta(f *testing.F) { fuzzStream(f, textMIME, metaStream, metaSeeds, noOpts) }
+
+// FuzzManifest fuzzes the manifest.
+func FuzzManifest(f *testing.F) { fuzzStream(f, textMIME, manifestStream, manifestSeeds, noOpts) }
+
+// smallPackage is a whole file of a few hundred bytes: the seed of the
+// target that fuzzes the archive itself.
+func smallPackage(t testing.TB) []byte {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	w, _ := zw.Create("mimetype")
+	w.Write([]byte(textMIME))
+	w, _ = zw.Create("content.xml")
+	w.Write([]byte(`<office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0">` +
+		`<office:body><office:text><text:h>T</text:h><text:p>a</text:p></office:text></office:body></office:document-content>`))
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
+}
+
 // FuzzExtract feeds whole files.
 func FuzzExtract(f *testing.F) {
-	f.Add(textDoc(f, listStyles, `<text:h>T</text:h><text:list text:style-name="L1"><text:list-item><text:p>a</text:p></text:list-item></text:list>`))
-	f.Add(textDoc(f, "", `<table:table><table:table-row><table:table-cell><text:p>x</text:p></table:table-cell></table:table-row></table:table>`))
+	f.Add(smallPackage(f))
 	f.Add([]byte("PK\x03\x04"))
 	f.Fuzz(func(t *testing.T, data []byte) {
 		fuzzExtract(t, data, nil)
 	})
+}
+
+// fuzzCase is one stream and its seeds, for TestMutations.
+type fuzzCase struct {
+	mime  string
+	st    stream
+	seeds []string
+}
+
+var fuzzCases = []fuzzCase{
+	{textMIME, contentStream, textSeeds},
+	{textMIME, stylesStream, stylesSeeds},
+	{textMIME, metaStream, metaSeeds},
+	{textMIME, manifestStream, manifestSeeds},
 }
 
 // TestMutations runs a fixed number of seeded random mutations of every
@@ -56,23 +189,14 @@ func TestMutations(t *testing.T) {
 	if testing.Short() {
 		n = 150
 	}
-	streams := []struct {
-		name  string
-		seeds []string
-	}{
-		{"content.xml", contentSeeds},
-		{"styles.xml", []string{stylesSeed}},
-		{"meta.xml", []string{metaSeed}},
-		{"META-INF/manifest.xml", []string{manifestSeed}},
-	}
 	rng := rand.New(rand.NewSource(1))
-	for _, st := range streams {
+	for _, c := range fuzzCases {
 		for i := 0; i < n; i++ {
-			b := mutate(rng, []byte(st.seeds[rng.Intn(len(st.seeds))]))
-			fuzzExtract(t, fuzzPackage(t, st.name, b), &gofastcore.Options{Spans: i%2 == 0, Images: gofastcore.ImagesData})
+			b := mutate(rng, []byte(c.seeds[rng.Intn(len(c.seeds))]))
+			fuzzExtract(t, fuzzPackage(t, c.mime, c.st, b), &gofastcore.Options{Spans: i%2 == 0, Cells: i%3 == 0, Images: gofastcore.ImagesData})
 		}
 	}
-	whole := textDoc(t, listStyles, `<text:p>whole file</text:p>`)
+	whole := smallPackage(t)
 	for i := 0; i < n; i++ {
 		fuzzExtract(t, mutate(rng, append([]byte(nil), whole...)), nil)
 	}
@@ -100,71 +224,4 @@ func mutate(rng *rand.Rand, b []byte) []byte {
 		}
 	}
 	return b
-}
-
-// fuzzPackage puts a stream in a sound package, so that the fuzzer works
-// on the XML.
-func fuzzPackage(t *testing.T, name string, data []byte) []byte {
-	var buf bytes.Buffer
-	zw := zip.NewWriter(&buf)
-	w, _ := zw.Create("mimetype")
-	w.Write([]byte(textMIME))
-	if name != "content.xml" {
-		w, _ = zw.Create("content.xml")
-		w.Write([]byte(content("", `<text:p>body</text:p>`)))
-	}
-	w, _ = zw.Create(name)
-	w.Write(data)
-	if err := zw.Close(); err != nil {
-		t.Fatal(err)
-	}
-	return buf.Bytes()
-}
-
-var contentSeeds = []string{
-	content(hidingStyles, `<text:p>Visible <text:span text:style-name="Hide">secret</text:span></text:p><text:section text:display="none"><text:p>x</text:p></text:section>`),
-	content(listStyles, `<text:list text:style-name="L1"><text:list-item><text:p>One</text:p><text:list><text:list-item><text:h>deep</text:h></text:list-item></text:list></text:list-item></text:list>`),
-	content("", `<table:table><table:table-row table:number-rows-repeated="5"><table:table-cell table:number-columns-spanned="2" table:number-rows-spanned="3"><text:p>x</text:p></table:table-cell></table:table-row></table:table>`),
-	content("", `<text:tracked-changes><text:changed-region text:id="c"><text:deletion><text:p>gone</text:p></text:deletion></text:changed-region></text:tracked-changes><text:p>a<text:change text:change-id="c"/><text:note><text:note-citation>1</text:note-citation><text:note-body><text:p>n</text:p></text:note-body></text:note><office:annotation><text:p>c</text:p></office:annotation></text:p>`),
-	content("", `<text:p><draw:frame><draw:text-box><text:p>box</text:p></draw:text-box><draw:image xlink:href="Pictures/x.png"/><svg:desc>d</svg:desc></draw:frame></text:p><text:user-field-decls><text:user-field-decl text:name="a" office:string-value="b"/></text:user-field-decls>`),
-	content("", `<text:p><text:drop-down><text:label text:value="a"/>a</text:drop-down><text:conditional-text text:condition="x" text:string-value-if-true="t">f</text:conditional-text><text:hidden-text text:is-hidden="true">h</text:hidden-text><text:s text:c="9"/></text:p>`),
-}
-
-var stylesSeed = stylesXML(outlineStyles+listStyles, `<style:page-layout style:name="p"><style:page-layout-properties fo:background-color="#000000"/></style:page-layout>`,
-	`<style:master-page style:name="S" style:page-layout-name="p"><style:header><text:p>h</text:p></style:header><style:footer style:display="false"><text:p>f</text:p></style:footer></style:master-page>`)
-
-var metaSeed = metaXML(`<dc:title>t</dc:title><meta:keyword>k</meta:keyword><meta:user-defined meta:name="n">v</meta:user-defined><meta:creation-date>2026-01-01T00:00:00</meta:creation-date>`)
-
-var manifestSeed = `<manifest:manifest` + namespaces + `><manifest:file-entry manifest:full-path="/" manifest:media-type="` + textMIME + `"/>` +
-	`<manifest:file-entry manifest:full-path="content.xml"><manifest:encryption-data><manifest:algorithm manifest:algorithm-name="x"/></manifest:encryption-data></manifest:file-entry></manifest:manifest>`
-
-func fuzzStream(f *testing.F, name string, seeds []string, opts func() *gofastcore.Options) {
-	for _, s := range seeds {
-		f.Add([]byte(s))
-	}
-	f.Fuzz(func(t *testing.T, data []byte) {
-		fuzzExtract(t, fuzzPackage(t, name, data), opts())
-	})
-}
-
-// FuzzContent fuzzes content.xml: the body reader and automatic styles.
-func FuzzContent(f *testing.F) {
-	fuzzStream(f, "content.xml", contentSeeds, func() *gofastcore.Options {
-		return &gofastcore.Options{Spans: true, Images: gofastcore.ImagesData}
-	})
-}
-
-// FuzzStyles fuzzes styles.xml: styles, list styles, master pages.
-func FuzzStyles(f *testing.F) {
-	fuzzStream(f, "styles.xml", []string{stylesSeed}, func() *gofastcore.Options { return nil })
-}
-
-// FuzzMeta fuzzes meta.xml.
-func FuzzMeta(f *testing.F) {
-	fuzzStream(f, "meta.xml", []string{metaSeed}, func() *gofastcore.Options { return nil })
-}
-
-// FuzzManifest fuzzes the manifest.
-func FuzzManifest(f *testing.F) {
-	fuzzStream(f, "META-INF/manifest.xml", []string{manifestSeed}, func() *gofastcore.Options { return nil })
 }

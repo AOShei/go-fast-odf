@@ -364,7 +364,15 @@ func (p *Package) Scan(name string, s *xmlscan.Scanner) (io.Closer, error) {
 	if err != nil {
 		return nil, err
 	}
-	s.Reset(rc, ns.Options)
+	// The window need not be larger than the stream says it is; it grows
+	// if a tag needs more, so a size that lies costs nothing but time.
+	opts := ns.Options
+	if size := p.Size(name); size >= 0 && size < xmlscan.DefaultBufferSize {
+		o := *ns.Options
+		o.BufferSize = int(max(size+1, 4096))
+		opts = &o
+	}
+	s.Reset(rc, opts)
 	return rc, nil
 }
 
