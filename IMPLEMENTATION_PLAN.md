@@ -64,8 +64,10 @@ execs/s per target.
 | ods: header rows of regions (print titles), declared database ranges as native tables | todo |
 | ods: cells' formulas without cached values (warning like ooxml's formula_no_value) | todo |
 | odp: off-slide frames (`off_page`), master-page text, tables in frames checked with a real slide test | todo |
-| Embedded objects (`draw:object` formulas as `formula`, charts, `draw:object-ole` as children) | todo |
-| Form controls and their values | todo |
+| Embedded objects (`draw:object` formulas as `formula`, charts, `draw:object-ole` as children) | done (run 3) |
+| Form controls and their values | done (run 3) |
+| Thematic breaks (core df335f0) for empty bottom-bordered paragraphs | done (run 3) |
+| Sub-documents held whole in a flat file's draw:object handed to children | todo |
 | Unit tests inside internal packages; Table.Cells hrefs in text-document tables | todo |
 
 ### Phase 3: encryption and polish

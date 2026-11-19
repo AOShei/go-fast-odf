@@ -51,6 +51,7 @@ One part of kind `body`, numbered 1, and, when the document stores values it nev
 | `text:drop-down` | its value in the text; the values offered as a `note` of type `choices`, `field` its name |
 | `text:conditional-text` | its current value in the text; condition and both values as a `note` of type `field`, flagged `invisible` |
 | fields (`text:date`, `text:page-number`, `text:author-name`, variables, ...) | their displayed value, in the text |
+| an empty paragraph of the body whose style (after inheritance) has a bottom border and no top, left or right border, or is LibreOffice's "Horizontal Line" style (`Horizontal_20_Line`) | `thematic_break`, `Origin` `inferred` (ODF has no rule element; this is what LibreOffice's AutoCorrect makes of `---`). Not when a paragraph beside it has the same border (a box), and never in table cells, list items, notes, comments, frames, headers or footers. Bordered paragraphs with text and literal `* * *` stay paragraphs |
 | `text:ruby` | base text, then the annotation in brackets |
 | indexes (tables of contents, ...) | their body as paragraphs; their templates are not text |
 | master page headers and footers (`styles.xml`) | `header` / `footer` blocks, first and last; each distinct one once |
@@ -110,7 +111,7 @@ Codes of this library:
 
 | Code | What happened |
 |---|---|
-| `odf.unread_content` | The document holds content this version does not read: embedded objects, form controls, plug-ins. The message counts them |
+| `odf.unread_content` | The document holds content this version does not read: an embedded formula or chart it could not read, a document held whole in a flat file, plug-ins, pictures over 64 MiB held in a flat file. The message counts them |
 | `odf.region_split` | An area of a sheet with thinly spread cells was written as one table per run of cells in a row |
 | `odf.part_damaged` | A supporting stream (manifest, styles, metadata) could not be read to its end; what was read is used |
 | `odf.property_truncated` | A metadata value was cut at 64 KiB, or keywords or user-defined properties beyond 256 were left out |
@@ -132,9 +133,19 @@ go test -run '^$' -fuzz '^FuzzContent$' -fuzztime=20s .
 
 Targets: `FuzzExtract` (whole files), `FuzzContent`, `FuzzSheet`, `FuzzSlides`, `FuzzStyles`, `FuzzMeta`, `FuzzManifest`, `FuzzFlat`. A target's input is the inside of a stream's root element (the target writes the root and its namespace declarations), and the packages it builds store their members uncompressed. Both matter: the fuzzing engine minimises each input that finds new coverage at a cost that grows with the square of its length, and with whole streams of 1–2 KB in compressed packages a worker spent nearly all its time minimising. `TestMutations` runs a seeded set of mutations of every target under plain `go test`.
 
+## Embedded objects and form controls
+
+In every kind of document, `draw:object` and `draw:object-ole` in a frame are read like this:
+
+- **Formulas** (a sub-document `Object N/` whose `content.xml` is MathML, or `math:math` held in the element in a flat file) become a `formula` block, `Attrs["notation"]="plain"`. The text is **converted from the MathML**: tokens as written, `a^b`, `a_b`, `(a)/(b)`, `sqrt(x)`, `root(x, n)`, fences as `( , )`, matrix rows separated by `;`. LibreOffice's StarMath source, from `<annotation encoding="StarMath 5.0">`, is kept in `Attrs["starmath"]`, and is the text when the MathML gives none.
+- **Charts** (a sub-document with `chart:chart`) give a `caption` block with the chart's title, then a `table` block of the data the chart keeps in its own table (header rows as `HeaderRows`), with `Attrs`: `role=chart`, `chart` the chart class (`bar`, `line`, ...), `x_axis` and `y_axis` the axis titles, `name` the frame's name.
+- When a formula or chart became blocks, the frame's replacement picture (`ObjectReplacements/Object N`) is not given: it is a drawing of the same thing.
+- **Other sub-documents** (a text document or spreadsheet embedded in another) are packed as a package of their own (members stored, `mimetype` first, the media type from the manifest or else from its body element) and handed to `Options.ExtractChild`; **OLE objects** (`draw:object-ole`, a member such as `Object 4`) are handed on as stored, with the manifest's media type. Each appears in `Document.Children`, extracted or listed. The decompression budget is settled with the shared budget before and after each. Linked objects (an address outside the package) are counted in `input.external_reference` and not fetched.
+- **Form controls** (`office:forms`, placed by `draw:control`) give a paragraph where they stand: label and value as `label: value` (a check box's value is `checked`), `Attrs["field"]` the control's name and `Attrs["control"]` its kind; a list box or combo box also gives a `choices` note of its options. Controls that no `draw:control` places go to the `stored` part with `stored=form_field`. The values of hidden controls and password fields are flagged `invisible`.
+
 ## Not read (yet)
 
-Drawings (`.odg`), charts, formulas and databases as documents; decryption; embedded objects (formulas, charts, OLE) beyond their replacement picture; form controls; change-tracked insertions are not marked in the text; text placed off a slide is not flagged (`off_page` is not checked); master-page text of slides; the OpenOffice 1.x formats (`.sxw`).
+Drawings (`.odg`), charts, formulas and databases as documents in their own right; decryption; documents held whole inside a flat file's `draw:object`; change-tracked insertions are not marked in the text; text placed off a slide is not flagged (`off_page` is not checked); master-page text of slides; the OpenOffice 1.x formats (`.sxw`).
 
 ## Provenance
 
