@@ -102,6 +102,18 @@ func TestHiddenText(t *testing.T) {
 	}
 }
 
+func TestHiddenInNotesAndCells(t *testing.T) {
+	data := textDoc(t, hidingStyles, `<text:p>Claim<text:note text:note-class="footnote"><text:note-citation>1</text:note-citation><text:note-body>`+
+		`<text:p>Seen <text:span text:style-name="Hide">unseen</text:span></text:p><text:p text:style-name="HidePara">all unseen</text:p><text:p>seen again</text:p></text:note-body></text:note></text:p>`)
+	b := body(t, extract(t, data, nil))
+	if len(b) != 2 || b[1].Kind != gofastcore.KindFootnote {
+		t.Fatalf("%s", summary(b))
+	}
+	if got, h := hiddenOf(b[1]); got != "unseenall unseen" || h != gofastcore.HiddenInvisible {
+		t.Errorf("footnote hidden %q %v: %+v", got, h, b[1])
+	}
+}
+
 func TestPageBackground(t *testing.T) {
 	styles := stylesXML(`<style:style style:name="Black" style:family="text"><style:text-properties fo:color="#000000"/></style:style>`,
 		`<style:page-layout style:name="pm1"><style:page-layout-properties fo:background-color="#000000"/></style:page-layout>`,

@@ -1,6 +1,7 @@
 package odt
 
 import (
+	"slices"
 	"strings"
 
 	"github.com/AOShei/go-fast-core"
@@ -62,80 +63,37 @@ func (r *reader) flatten(blocks []gofastcore.Block) (text string, spans []gofast
 		}
 		off := len(buf)
 		buf = append(buf, line...)
-		if lineWhole != 0 {
-			collected = append(collected, gofastcore.Span{Start: off, End: len(buf), Hidden: lineWhole})
+		// The line's own spans do not overlap; reasons that cover the
+		// whole line go on them and on the gaps between them.
+		at := off
+		gap := func(end int) {
+			if lineWhole != 0 && end > at {
+				collected = append(collected, gofastcore.Span{Start: at, End: end, Hidden: lineWhole})
+			}
 		}
+		sortSpans(lineSpans)
 		for _, sp := range lineSpans {
 			sp.Start += off
 			sp.End += off
+			if sp.Start < at || sp.End <= sp.Start {
+				continue
+			}
+			gap(sp.Start)
+			sp.Hidden |= lineWhole
 			collected = append(collected, sp)
+			at = sp.End
 		}
+		gap(len(buf))
 	}
 	if len(buf) == 0 {
 		return "", nil, 0, rest
 	}
-	sortSpans(collected)
-	spans, all = settle(splitSpans(collected), 0, len(buf), buf)
+	spans, all = settle(collected, 0, len(buf), buf)
 	return string(buf), spans, all, rest
 }
 
-// splitSpans makes spans that overlap (a line's whole-block reasons over
-// the spans inside it) into spans that do not, each with the reasons of
-// all that cover it.
-func splitSpans(in []gofastcore.Span) []gofastcore.Span {
-	if len(in) < 2 {
-		return in
-	}
-	var cuts []int
-	for _, sp := range in {
-		cuts = append(cuts, sp.Start, sp.End)
-	}
-	sortInts(cuts)
-	var out []gofastcore.Span
-	for i := 0; i+1 < len(cuts); i++ {
-		a, b := cuts[i], cuts[i+1]
-		if a == b {
-			continue
-		}
-		var piece gofastcore.Span
-		found := false
-		for _, sp := range in {
-			if sp.Start <= a && sp.End >= b {
-				piece.Hidden |= sp.Hidden
-				piece.Style |= sp.Style
-				if sp.Href != "" {
-					piece.Href = sp.Href
-				}
-				found = true
-			}
-		}
-		if !found {
-			continue
-		}
-		piece.Start, piece.End = a, b
-		if n := len(out); n > 0 && out[n-1].End == a && out[n-1].Hidden == piece.Hidden && out[n-1].Style == piece.Style && out[n-1].Href == piece.Href {
-			out[n-1].End = b
-			continue
-		}
-		out = append(out, piece)
-	}
-	return out
-}
-
-func sortInts(a []int) {
-	for i := 1; i < len(a); i++ {
-		for j := i; j > 0 && a[j] < a[j-1]; j-- {
-			a[j], a[j-1] = a[j-1], a[j]
-		}
-	}
-}
-
 func sortSpans(a []gofastcore.Span) {
-	for i := 1; i < len(a); i++ {
-		for j := i; j > 0 && a[j].Start < a[j-1].Start; j-- {
-			a[j], a[j-1] = a[j-1], a[j]
-		}
-	}
+	slices.SortStableFunc(a, func(x, y gofastcore.Span) int { return x.Start - y.Start })
 }
 
 // tableText writes a table as lines of tab-separated cells.
