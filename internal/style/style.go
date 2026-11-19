@@ -157,6 +157,7 @@ type Set struct {
 	layoutName string // the page layout being read
 	Truncated  bool   // more styles than maxStyles; the rest were left out
 	Damaged    bool   // a stream's styles could not be read to their end
+	Scripts    int    // non-empty office:scripts or office:event-listeners met
 }
 
 type cacheKey struct {
@@ -235,6 +236,10 @@ func (set *Set) Read(s *xmlscan.Scanner, sc Scope) error {
 			switch local {
 			case "body":
 				return nil // the styles come before the body
+			case "scripts", "event-listeners":
+				if HasChildren(s) {
+					set.Scripts++
+				}
 			case "automatic-styles":
 				where = &set.auto[sc]
 			case "styles":
@@ -341,6 +346,22 @@ func (set *Set) Read(s *xmlscan.Scanner, sc Scope) error {
 					l.DisplayLevels = min(n, 10)
 				}
 			}
+		}
+	}
+}
+
+// HasChildren reads past the current element and reports whether it held
+// any element.
+func HasChildren(s *xmlscan.Scanner) bool {
+	depth := s.Depth()
+	found := false
+	for {
+		k := s.Next()
+		if k == xmlscan.EOF || k == xmlscan.End && s.Depth() < depth {
+			return found
+		}
+		if k == xmlscan.Start {
+			found = true
 		}
 	}
 }

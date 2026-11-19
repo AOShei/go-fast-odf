@@ -1,0 +1,355 @@
+package odt
+
+import (
+	"strconv"
+	"strings"
+
+	"github.com/AOShei/go-fast-core"
+	"github.com/AOShei/go-fast-odf/internal/clean"
+	"github.com/AOShei/go-fast-odf/internal/ns"
+	"github.com/AOShei/go-fast-odf/internal/style"
+	"github.com/AOShei/go-fast-odf/internal/xmlscan"
+)
+
+// counters are the numbers of a list at each level.
+type counters struct {
+	n       [10]int
+	started [10]bool
+}
+
+// next counts an item at level (from 1) and returns the counters.
+func (c *counters) next(level, start int) {
+	i := min(max(level, 1), 10) - 1
+	if !c.started[i] {
+		c.n[i] = start
+		c.started[i] = true
+	} else {
+		c.n[i]++
+	}
+	for j := i + 1; j < 10; j++ {
+		c.started[j] = false
+	}
+}
+
+func (c *counters) restart(level, start int) {
+	i := min(max(level, 1), 10) - 1
+	c.n[i] = start - 1
+	c.started[i] = true
+	for j := i + 1; j < 10; j++ {
+		c.started[j] = false
+	}
+}
+
+// listState carries numbering from one list to the next that continues
+// it.
+type listState struct {
+	byID    map[string]*counters
+	byStyle map[string]*counters
+	last    *counters
+}
+
+func (l *listState) init() {
+	l.byID = map[string]*counters{}
+	l.byStyle = map[string]*counters{}
+}
+
+// maxListIDs bounds the list identifiers remembered.
+const maxListIDs = 1 << 14
+
+// listCtx is a text:list being read.
+type listCtx struct {
+	style *style.ListStyle
+	name  string
+	depth int
+	count *counters
+}
+
+func (l *listCtx) ordered() bool {
+	lv := l.style.Level(l.depth)
+	return lv.Kind == 'n' && lv.Format != ""
+}
+
+// itemCtx is the list item whose first paragraph is being read.
+type itemCtx struct {
+	list  *listCtx
+	depth int
+	start int // a start value the item sets, or -1
+	label string
+	done  bool
+}
+
+// marker counts the item and returns its label.
+func (it *itemCtx) marker() (string, bool) {
+	if it.done {
+		return it.label, it.list.ordered()
+	}
+	it.done = true
+	l := it.list
+	lv := l.style.Level(it.depth)
+	switch lv.Kind {
+	case 'b':
+		it.label = clean.Label(lv.Bullet)
+		if it.label == "" {
+			it.label = "•"
+		}
+		return it.label, false
+	case 'i':
+		it.label = "•"
+		return it.label, false
+	case 'n':
+		start := lv.Start
+		if it.start >= 0 {
+			l.count.restart(it.depth, it.start)
+		}
+		l.count.next(it.depth, start)
+		it.label = formatNumber(l.style, l.count, it.depth, lv)
+		return it.label, lv.Format != ""
+	}
+	// No level style: a plain bullet.
+	it.label = "•"
+	return it.label, false
+}
+
+// formatNumber writes the label of an item at depth.
+func formatNumber(ls *style.ListStyle, c *counters, depth int, lv style.ListLevel) string {
+	if lv.Format == "" {
+		return clean.Label(lv.Prefix + lv.Suffix)
+	}
+	first := max(depth-lv.DisplayLevels+1, 1)
+	var parts []string
+	for d := first; d <= depth; d++ {
+		f := ls.Level(d)
+		if d < depth && f.Format == "" {
+			continue
+		}
+		i := min(d, 10) - 1
+		n := c.n[i]
+		if !c.started[i] {
+			n = f.Start
+		}
+		format := f.Format
+		if d == depth {
+			format = lv.Format
+		}
+		parts = append(parts, number(n, format, f.LetterSync))
+	}
+	return clean.Label(lv.Prefix + strings.Join(parts, ".") + lv.Suffix)
+}
+
+// number writes n in a list numbering format: 1, a, A, i, I. Formats
+// this reader does not know are written as arabic numerals.
+func number(n int, format string, sync bool) string {
+	switch format {
+	case "a", "A":
+		if n <= 0 {
+			return strconv.Itoa(n)
+		}
+		base := byte('a')
+		if format == "A" {
+			base = 'A'
+		}
+		if sync {
+			ch := base + byte((n-1)%26)
+			return strings.Repeat(string(ch), min((n-1)/26+1, 64))
+		}
+		var b []byte
+		for n > 0 && len(b) < 64 {
+			n--
+			b = append([]byte{base + byte(n%26)}, b...)
+			n /= 26
+		}
+		return string(b)
+	case "i", "I":
+		if n <= 0 || n >= 4000 {
+			return strconv.Itoa(n)
+		}
+		vals := []int{1000, 900, 500, 400, 100, 90, 50, 40, 10, 9, 5, 4, 1}
+		syms := []string{"m", "cm", "d", "cd", "c", "xc", "l", "xl", "x", "ix", "v", "iv", "i"}
+		var sb strings.Builder
+		for i, v := range vals {
+			for n >= v {
+				sb.WriteString(syms[i])
+				n -= v
+			}
+		}
+		if format == "I" {
+			return strings.ToUpper(sb.String())
+		}
+		return sb.String()
+	}
+	return strconv.Itoa(n)
+}
+
+// list reads text:list.
+func (r *reader) list(c ctxt, dst *[]gofastcore.Block) {
+	s := &r.s
+	name := r.attr(ns.Text, "style-name")
+	l := &listCtx{depth: 1}
+	if c.list != nil {
+		l.depth = c.list.depth + 1
+		l.count = c.list.count
+		l.name, l.style = c.list.name, c.list.style
+		if name != "" {
+			l.name, l.style = name, r.set.List(r.sc, name)
+		}
+	} else {
+		l.name = name
+		l.style = r.set.List(r.sc, name)
+		cont := r.attr(ns.Text, "continue-list")
+		switch {
+		case cont != "" && r.lists.byID[cont] != nil:
+			l.count = r.lists.byID[cont]
+		case r.attr(ns.Text, "continue-numbering") == "true":
+			l.count = r.lists.byStyle[name]
+			if l.count == nil {
+				l.count = r.lists.last
+			}
+		}
+		if l.count == nil {
+			l.count = &counters{}
+		}
+		if id := r.attr(xmlscan.SpaceXML, "id"); id != "" && len(r.lists.byID) < maxListIDs {
+			r.lists.byID[id] = l.count
+		}
+		if len(r.lists.byStyle) < maxListIDs {
+			r.lists.byStyle[name] = l.count
+		}
+		r.lists.last = l.count
+	}
+	depth := s.Depth()
+	for {
+		k := s.Next()
+		if k == xmlscan.EOF || k == xmlscan.End && s.Depth() < depth {
+			return
+		}
+		if k != xmlscan.Start || !r.alive() {
+			continue
+		}
+		if s.Space() != ns.Text {
+			r.blockAt(ctxt{hidden: c.hidden, bg: c.bg, list: l}, dst)
+			continue
+		}
+		switch string(s.Local()) {
+		case "list-item":
+			start := -1
+			if n, err := strconv.Atoi(strings.TrimSpace(r.attr(ns.Text, "start-value"))); err == nil && n >= 0 {
+				start = n
+			}
+			r.item(c, l, &itemCtx{list: l, depth: l.depth, start: start}, dst)
+		case "list-header":
+			r.item(c, l, nil, dst)
+		default:
+			r.blockAt(ctxt{hidden: c.hidden, bg: c.bg, list: l}, dst)
+		}
+	}
+}
+
+// item reads text:list-item (it set) or text:list-header (it nil: no
+// label).
+func (r *reader) item(c ctxt, l *listCtx, it *itemCtx, dst *[]gofastcore.Block) {
+	s := &r.s
+	inner := ctxt{hidden: c.hidden, bg: c.bg, list: l}
+	first := true
+	var given string // a text:number the item carries
+	depth := s.Depth()
+	for {
+		k := s.Next()
+		if k == xmlscan.EOF || k == xmlscan.End && s.Depth() < depth {
+			return
+		}
+		if k != xmlscan.Start || !r.alive() {
+			continue
+		}
+		space, local := s.Space(), string(s.Local())
+		switch {
+		case space == ns.Text && local == "number":
+			v, _ := clean.String(s.AppendText(nil), clean.Prose)
+			given = clean.Label(v)
+		case space == ns.Text && (local == "p" || local == "h"):
+			var use *itemCtx
+			if first {
+				first = false
+				if it != nil {
+					use = it
+					if given != "" {
+						use.marker() // counted all the same
+						use.label = given
+					}
+				} else {
+					use = &itemCtx{list: l, depth: l.depth, done: true}
+				}
+			}
+			r.paragraph(inner, local == "h", use, dst)
+		case space == ns.Text && local == "list":
+			r.list(inner, dst)
+		default:
+			r.blockAt(inner, dst)
+		}
+	}
+}
+
+// numberedParagraph reads text:numbered-paragraph (ODF 1.2): a paragraph
+// numbered as an item of a list at text:level.
+func (r *reader) numberedParagraph(c ctxt, dst *[]gofastcore.Block) {
+	s := &r.s
+	name := r.attr(ns.Text, "style-name")
+	level := 1
+	if n, err := strconv.Atoi(strings.TrimSpace(r.attr(ns.Text, "level"))); err == nil && n > 0 {
+		level = min(n, 10)
+	}
+	id := r.attr(ns.Text, "list-id")
+	count := r.lists.byID[id]
+	if count == nil {
+		count = &counters{}
+		if id != "" && len(r.lists.byID) < maxListIDs {
+			r.lists.byID[id] = count
+		}
+	}
+	l := &listCtx{style: r.set.List(r.sc, name), name: name, depth: level, count: count}
+	it := &itemCtx{list: l, depth: level, start: -1}
+	if n, err := strconv.Atoi(strings.TrimSpace(r.attr(ns.Text, "start-value"))); err == nil && n >= 0 {
+		it.start = n
+	}
+	var given string
+	depth := s.Depth()
+	for {
+		k := s.Next()
+		if k == xmlscan.EOF || k == xmlscan.End && s.Depth() < depth {
+			return
+		}
+		if k != xmlscan.Start {
+			continue
+		}
+		switch {
+		case s.Space() == ns.Text && string(s.Local()) == "number":
+			v, _ := clean.String(s.AppendText(nil), clean.Prose)
+			given = clean.Label(v)
+		case s.Space() == ns.Text && (string(s.Local()) == "p" || string(s.Local()) == "h"):
+			if given != "" {
+				it.marker()
+				it.label = given
+			}
+			r.paragraph(c, string(s.Local()) == "h", it, dst)
+		default:
+			r.blockAt(c, dst)
+		}
+	}
+}
+
+// outlineMarker counts a heading at level and returns its number, if the
+// outline style numbers headings.
+func (r *reader) outlineMarker(level int) string {
+	ls := r.set.Outline()
+	if ls == nil {
+		return ""
+	}
+	lv := ls.Level(level)
+	if lv.Kind != 'n' {
+		return ""
+	}
+	r.outline.next(level, lv.Start)
+	if lv.Format == "" {
+		return clean.Label(lv.Prefix + lv.Suffix)
+	}
+	return formatNumber(ls, &r.outline, level, lv)
+}
