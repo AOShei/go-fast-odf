@@ -1,0 +1,16 @@
+go-fast-odf
+Copyright (c) 2025 Andrew O'Shei. Licensed under the MIT License (see LICENSE).
+
+This software includes code copied from go-fast-ooxml
+(github.com/AOShei/go-fast-ooxml), Copyright (c) 2025 Andrew O'Shei, under
+the same MIT License. Each copied file says so in its first lines:
+
+  internal/xmlscan/xmlscan.go, encoding.go, xmlscan_test.go
+                               (go-fast-ooxml internal/xmlscan)
+  internal/clean/clean.go, clean_test.go
+                               (go-fast-ooxml internal/clean)
+  internal/hidden/hidden.go    (go-fast-ooxml internal/hidden)
+  internal/odpkg/recover.go    (go-fast-ooxml internal/opc/recover.go)
+
+No third-party data tables are included. List numbering formats (1, a, A,
+i, I) are computed, not tabulated.
