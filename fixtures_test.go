@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"hash/crc32"
 	"strings"
 	"testing"
 
@@ -25,6 +26,14 @@ const namespaces = ` xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:
 	` xmlns:svg="urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0"` +
 	` xmlns:loext="urn:org:documentfoundation:names:experimental:office:xmlns:loext:1.0"` +
 	` xmlns:manifest="urn:oasis:names:tc:opendocument:xmlns:manifest:1.0"`
+
+// Characters the tests need, made from their code points so that the
+// sources hold none of them literally.
+var (
+	zwsp   = string(rune(0x200B)) // zero width space
+	ligFi  = string(rune(0xFB01)) // the fi ligature
+	ligFfi = string(rune(0xFB03)) // the ffi ligature
+)
 
 const textMIME = "application/vnd.oasis.opendocument.text"
 
@@ -61,7 +70,9 @@ func pkg(t testing.TB, mime string, members ...member) []byte {
 	t.Helper()
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
-	w, err := zw.CreateHeader(&zip.FileHeader{Name: "mimetype", Method: zip.Store})
+	// As the standard asks: stored, sizes in the header.
+	w, err := zw.CreateRaw(&zip.FileHeader{Name: "mimetype", Method: zip.Store, CRC32: crc32.ChecksumIEEE([]byte(mime)),
+		CompressedSize64: uint64(len(mime)), UncompressedSize64: uint64(len(mime))})
 	if err != nil {
 		t.Fatal(err)
 	}

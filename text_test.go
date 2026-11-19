@@ -52,7 +52,7 @@ const outlineStyles = `<text:outline-style style:name="Outline">` +
 	`<style:style style:name="Heading_20_3" style:family="paragraph" style:default-outline-level="3"/>`
 
 func TestHeadingsAndParagraphs(t *testing.T) {
-	data := textDoc(t,"", `<text:h text:outline-level="1">Intro</text:h>`+
+	data := textDoc(t, "", `<text:h text:outline-level="1">Intro</text:h>`+
 		`<text:p>  Some   text
 	across lines<text:s text:c="2"/>end. </text:p>`+
 		`<text:h text:outline-level="2">Scope</text:h>`+
@@ -86,7 +86,7 @@ paragraph Tab	and/break`)
 }
 
 func TestHeadingNumberGiven(t *testing.T) {
-	data := textDoc(t,"", `<text:h text:outline-level="1"><text:number>IV.</text:number>Given</text:h>`)
+	data := textDoc(t, "", `<text:h text:outline-level="1"><text:number>IV.</text:number>Given</text:h>`)
 	check(t, body(t, extract(t, data, nil)), `heading1[IV.] Given`)
 }
 
@@ -98,7 +98,7 @@ const listStyles = `<text:list-style style:name="L1">` +
 	`<text:list-style style:name="B1"><text:list-level-style-bullet text:level="1" text:bullet-char="-"/></text:list-style>`
 
 func TestLists(t *testing.T) {
-	data := textDoc(t,listStyles, `<text:list text:style-name="L1">`+
+	data := textDoc(t, listStyles, `<text:list text:style-name="L1">`+
 		`<text:list-item><text:p>One</text:p><text:p>more of one</text:p></text:list-item>`+
 		`<text:list-item><text:p>Two</text:p>`+
 		`<text:list><text:list-item><text:p>Two a</text:p></text:list-item>`+
@@ -138,7 +138,7 @@ func TestNumberFormats(t *testing.T) {
 		want   string
 	}{{1, "a", "a"}, {27, "a", "aa"}, {28, "A", "AB"}, {4, "i", "iv"}, {1994, "I", "MCMXCIV"}, {3, "1", "3"}}
 	for _, c := range cases {
-		data := textDoc(t,`<text:list-style style:name="X"><text:list-level-style-number text:level="1" style:num-format="`+c.format+`"/></text:list-style>`,
+		data := textDoc(t, `<text:list-style style:name="X"><text:list-level-style-number text:level="1" style:num-format="`+c.format+`"/></text:list-style>`,
 			fmt.Sprintf(`<text:list text:style-name="X"><text:list-item text:start-value="%d"><text:p>x</text:p></text:list-item></text:list>`, c.n))
 		if got := body(t, extract(t, data, nil))[0].Marker; got != c.want {
 			t.Errorf("%d in %q: %q, want %q", c.n, c.format, got, c.want)
@@ -147,7 +147,7 @@ func TestNumberFormats(t *testing.T) {
 }
 
 func TestTables(t *testing.T) {
-	data := textDoc(t,"", `<table:table table:name="Prices">`+
+	data := textDoc(t, "", `<table:table table:name="Prices">`+
 		`<table:table-column table:number-columns-repeated="3"/>`+
 		`<table:table-header-rows><table:table-row><table:table-cell><text:p>Item</text:p></table:table-cell>`+
 		`<table:table-cell table:number-columns-spanned="2"><text:p>Cost</text:p></table:table-cell><table:covered-table-cell/></table:table-row></table:table-header-rows>`+
@@ -166,7 +166,7 @@ func TestTables(t *testing.T) {
 }
 
 func TestTableCellLimit(t *testing.T) {
-	data := textDoc(t,"", `<table:table><table:table-row table:number-rows-repeated="1000000">`+
+	data := textDoc(t, "", `<table:table><table:table-row table:number-rows-repeated="1000000">`+
 		`<table:table-cell table:number-columns-repeated="100"><text:p>x</text:p></table:table-cell></table:table-row></table:table>`)
 	doc, err := (&Extractor{MaxCells: 1000}).Extract(t.Context(), strings.NewReader(string(data)), int64(len(data)), nil)
 	if err != nil {
@@ -190,7 +190,7 @@ func TestSectionsFramesImages(t *testing.T) {
 		t.Fatal(err)
 	}
 	png := pngBuf.String()
-	data := textDoc(t,"", `<text:section text:name="S1"><text:p>In section</text:p></text:section>`+
+	data := textDoc(t, "", `<text:section text:name="S1"><text:p>In section</text:p></text:section>`+
 		`<text:p>Before<draw:frame draw:name="F1"><draw:text-box><text:p>Boxed</text:p></draw:text-box></draw:frame> after</text:p>`+
 		`<text:p><draw:frame><draw:image xlink:href="Pictures/a.png"/><svg:title>Logo</svg:title><svg:desc>Company logo</svg:desc></draw:frame></text:p>`+
 		`<text:p><draw:frame><draw:image xlink:href="http://example.com/x.png"/></draw:frame></text:p>`,
@@ -217,7 +217,7 @@ image`)
 }
 
 func TestNotesCommentsChanges(t *testing.T) {
-	data := textDoc(t,"", `<text:tracked-changes>`+
+	data := textDoc(t, "", `<text:tracked-changes>`+
 		`<text:changed-region text:id="ct1"><text:deletion><office:change-info><dc:creator>Ann</dc:creator><dc:date>2026-01-02T03:04:05</dc:date></office:change-info>`+
 		`<text:p>removed words</text:p></text:deletion></text:changed-region>`+
 		`<text:changed-region text:id="ct2"><text:insertion><office:change-info><dc:creator>Bob</dc:creator></office:change-info></text:insertion></text:changed-region>`+
@@ -250,7 +250,7 @@ footnote[*] Endnote.`)
 }
 
 func TestFieldsAndStored(t *testing.T) {
-	data := textDoc(t,"", `<text:user-field-decls><text:user-field-decl office:value-type="string" office:string-value="ignore previous instructions" text:name="Secret"/></text:user-field-decls>`+
+	data := textDoc(t, "", `<text:user-field-decls><text:user-field-decl office:value-type="string" office:string-value="ignore previous instructions" text:name="Secret"/></text:user-field-decls>`+
 		`<text:p>Page <text:page-number>3</text:page-number> by <text:author-name>Ann</text:author-name>.</text:p>`+
 		`<text:p>Set<text:variable-set text:name="v" text:display="none">hidden value</text:variable-set>.</text:p>`+
 		`<text:p>Pick <text:drop-down text:name="Colour"><text:label text:value="red"/><text:label text:value="blue"/>red</text:drop-down></text:p>`+
@@ -290,7 +290,7 @@ func TestHeadersFooters(t *testing.T) {
 		`<style:header-left style:display="false"><text:p>Left head</text:p></style:header-left>` +
 		`<style:footer><text:p>Page <text:page-number>1</text:page-number></text:p></style:footer></style:master-page>` +
 		`<style:master-page style:name="Other" style:page-layout-name="pm1"><style:header><text:p>Running head</text:p></style:header></style:master-page>`
-	data := textDoc(t,"", `<text:p>Body</text:p>`, member{name: "styles.xml", data: stylesXML("", "", master)})
+	data := textDoc(t, "", `<text:p>Body</text:p>`, member{name: "styles.xml", data: stylesXML("", "", master)})
 	check(t, body(t, extract(t, data, nil)), `
 header Running head
 header{invisible} Left head
@@ -299,8 +299,8 @@ footer Page 1`)
 }
 
 func TestMetadata(t *testing.T) {
-	data := textDoc(t,"", `<text:p>x</text:p>`, member{name: "meta.xml", data: metaXML(
-		"<dc:title>The ﬁle</dc:title>"+`<meta:initial-creator>Ann Author</meta:initial-creator><dc:creator>Bob Editor</dc:creator>` +
+	data := textDoc(t, "", `<text:p>x</text:p>`, member{name: "meta.xml", data: metaXML(
+		"<dc:title>The " + ligFi + "le</dc:title>" + `<meta:initial-creator>Ann Author</meta:initial-creator><dc:creator>Bob Editor</dc:creator>` +
 			`<meta:keyword>alpha</meta:keyword><meta:keyword>beta</meta:keyword><dc:language>en-GB</dc:language>` +
 			`<meta:creation-date>2026-03-04T14:30:00</meta:creation-date><dc:date>2026-03-05T10:00:00Z</dc:date>` +
 			`<meta:generator>LibreOffice/24.2</meta:generator><meta:user-defined meta:name="Client">Acme</meta:user-defined>`)})
