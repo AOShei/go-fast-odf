@@ -2,6 +2,9 @@ package odt
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
 	"image"
 	_ "image/gif" // pixel sizes of pictures
 	_ "image/jpeg"
@@ -173,8 +176,8 @@ func (r *reader) imageAt(c ctxt, alt string, dst *[]gofastcore.Block) {
 		if k == xmlscan.EOF || k == xmlscan.End && s.Depth() < depth {
 			break
 		}
-		if k == xmlscan.Start && s.Space() == ns.Office && string(s.Local()) == "binary-data" {
-			inline = s.AppendText(nil)
+		if k == xmlscan.Start && s.Space() == ns.Office && string(s.Local()) == "binary-data" && inline == nil {
+			inline = r.binaryData()
 		} else if k == xmlscan.Start {
 			s.Skip()
 		}
@@ -202,12 +205,66 @@ func (r *reader) imageAt(c ctxt, alt string, dst *[]gofastcore.Block) {
 			}
 		}
 	case len(inline) > 0:
-		_ = inline // flat files: phase 2
+		// A picture held in a flat file. It is identified by its content,
+		// so that equal pictures have equal IDs.
+		sum := sha256.Sum256(inline)
+		id := "inline-" + hex.EncodeToString(sum[:8])
+		b.Image.ID = id
+		if cfg, format, err := image.DecodeConfig(bytes.NewReader(inline)); err == nil {
+			b.Image.MIME, b.Image.Width, b.Image.Height = "image/"+format, cfg.Width, cfg.Height
+		}
+		if r.opts.Images == gofastcore.ImagesData && !r.dataSent[id] {
+			b.Image.Data = inline
+			r.dataSent[id] = true
+		}
 	}
 	whole(&b, c.hidden)
 	if !r.emit(dst, b) {
 		return
 	}
+}
+
+// maxInline bounds the encoded size of a picture held in a flat file.
+const maxInline = 64 << 20
+
+// binaryData reads office:binary-data (base64) and decodes it. Its size
+// is charged to the decompression budget; a picture over maxInline, or
+// one the budget cannot hold, is skipped and nil returned.
+func (r *reader) binaryData() []byte {
+	s := &r.s
+	var enc []byte
+	over := false
+	depth := s.Depth()
+	for {
+		k := s.Next()
+		if k == xmlscan.EOF || k == xmlscan.End && s.Depth() < depth {
+			break
+		}
+		if k == xmlscan.Text && !over {
+			for _, c := range s.Text() {
+				if c != ' ' && c != '\n' && c != '\r' && c != '\t' {
+					enc = append(enc, c)
+				}
+			}
+			over = len(enc) > maxInline
+		}
+	}
+	if over || len(enc) == 0 || !r.pkg.Charge(int64(len(enc))) {
+		if over {
+			r.addUnread("pictures larger than 64 MiB held in the file")
+		}
+		return nil
+	}
+	raw := bytes.TrimRight(enc, "=")
+	out := make([]byte, max(base64.StdEncoding.DecodedLen(len(enc)), base64.RawStdEncoding.DecodedLen(len(raw))))
+	n, err := base64.StdEncoding.Decode(out, enc)
+	if err != nil {
+		n, _ = base64.RawStdEncoding.Decode(out, raw)
+	}
+	if n == 0 {
+		return nil
+	}
+	return out[:n]
 }
 
 // imageInfo learns a picture's media type and pixel size, once.
@@ -273,6 +330,8 @@ func (r *reader) masterPages(part *gofastcore.Part) (headers, footers []gofastco
 		switch {
 		case space == ns.Office && local == "master-styles":
 			inMasters = true
+		case space == ns.Office && local == "body":
+			return headers, footers // a flat file: the master pages came before
 		case space == ns.Office && s.Depth() == 2:
 			s.Skip() // the styles themselves, read by the style package
 		case !inMasters:

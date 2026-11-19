@@ -44,14 +44,16 @@ type Config struct {
 
 // Result is what reading the document gave.
 type Result struct {
-	// Body is the one body part; Stored the stored part, or nil.
-	Body   gofastcore.Part
+	// Kind is the body element's local name: "text", "spreadsheet",
+	// "presentation", or another this package does not read (Parts is
+	// then empty), or "" if the stream has no body.
+	Kind string
+	// Parts are the body of a text document, the sheets of a spreadsheet,
+	// the slides of a presentation. Stored is the stored part, or nil.
+	Parts  []gofastcore.Part
 	Stored *gofastcore.Part
 	// Warnings concern the document as a whole.
 	Warnings []gofastcore.Warning
-	// NotText says the content stream holds a body of another kind
-	// (spreadsheet, presentation, ...): its element's local name.
-	NotText string
 	// ActiveContent counts scripts, macro links and event handlers.
 	ActiveContent int
 }
@@ -98,6 +100,7 @@ type reader struct {
 	active      int
 	unread      map[string]int
 	unreadOrder []string
+	validations map[string]validation
 	delOrder    []string // deletion ids in document order
 	tick        int
 }
@@ -115,15 +118,8 @@ func Read(ctx context.Context, pkg *odpkg.Package, set *style.Set, opts *gofastc
 		unread:    map[string]int{},
 	}
 	r.lists.init()
-	res := &Result{Body: gofastcore.Part{Kind: gofastcore.PartBody, Number: 1, Blocks: []gofastcore.Block{}}}
-	part := &res.Body
+	res := &Result{}
 
-	headers, footers := r.masterPages(part)
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-
-	var body []gofastcore.Block
 	c, err := pkg.Scan("content.xml", &r.s)
 	if err != nil {
 		return nil, err
@@ -132,65 +128,35 @@ func Read(ctx context.Context, pkg *odpkg.Package, set *style.Set, opts *gofastc
 	r.sc = style.Content
 	serr := set.Read(&r.s, style.Content)
 	if serr == nil {
-		found := ""
-		for found == "" {
+		for res.Kind == "" {
 			k := r.s.Next()
 			if k == xmlscan.EOF {
 				break
 			}
 			if k == xmlscan.Start && r.s.Depth() == 3 && r.s.Space() == ns.Office {
-				found = string(r.s.Local())
+				res.Kind = clean.Label(string(r.s.Local()))
 			}
 		}
-		switch found {
-		case "text":
-			bg := set.PageBackground("")
-			r.blocks(ctxt{bg: bg}, &body)
-		case "":
-		default:
-			res.NotText = clean.Label(found)
-			return res, nil
-		}
+	}
+	switch res.Kind {
+	case "spreadsheet":
+		res.Parts = r.spreadsheet(serr)
+	case "presentation":
+		res.Parts = r.presentation(serr)
+	case "text", "":
+		res.Parts = []gofastcore.Part{r.textBody(serr)}
+	default:
+		return res, nil
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
-	}
-	if serr == nil {
-		serr = r.s.Err()
-	}
-	r.noteFailure(part, "content.xml", serr)
-
-	// Deletions nothing in the body points at are kept, at the end.
-	if !r.stopped {
-		for _, id := range r.deletionOrder() {
-			r.useDeletion(id, &body)
-		}
-	}
-	part.Blocks = append(part.Blocks, headers...)
-	part.Blocks = append(part.Blocks, body...)
-	part.Blocks = append(part.Blocks, r.endnotes...)
-	part.Blocks = append(part.Blocks, footers...)
-
-	if r.stopped && r.limitMsg != "" {
-		part.Warn(gofastcore.SeverityError, gofastcore.WarnLimitExceeded, r.limitMsg)
-	}
-	if r.tracked {
-		part.Warn(gofastcore.SeverityInfo, gofastcore.WarnTextTrackedChanges, "the document has tracked changes; its text is given as if all were accepted, and deleted text is kept in notes")
-	}
-	if r.clamped > 0 {
-		part.Warn(gofastcore.SeverityInfo, gofastcore.WarnHeadingLevelClamped, fmt.Sprintf("%d headings deeper than level 6", r.clamped))
 	}
 	if r.removed > 0 {
 		res.Warnings = append(res.Warnings, gofastcore.Warning{Code: "odf.control_characters_removed", Severity: gofastcore.SeverityInfo,
 			Message: fmt.Sprintf("%d control characters removed from the text", r.removed)})
 	}
-	if len(part.Blocks) == 0 && len(part.Warnings) == 0 {
-		part.Warn(gofastcore.SeverityWarning, gofastcore.WarnPartNoText, "the document body has no text and no images")
-	}
-	part.MarkHidden()
-
 	if len(r.userVars) > 0 {
-		st := &gofastcore.Part{Kind: gofastcore.PartStored, Number: 2, Hidden: gofastcore.HiddenInvisible, Blocks: r.userVars}
+		st := &gofastcore.Part{Kind: gofastcore.PartStored, Number: len(res.Parts) + 1, Hidden: gofastcore.HiddenInvisible, Blocks: r.userVars}
 		st.MarkHidden()
 		res.Stored = st
 	}
@@ -214,6 +180,61 @@ func (r *reader) addUnread(what string) {
 		r.unreadOrder = append(r.unreadOrder, what)
 	}
 	r.unread[what]++
+}
+
+// textBody reads the body of a text document, whose office:text element
+// is current, into its one part, with the headers and footers of its
+// master pages.
+func (r *reader) textBody(serr error) gofastcore.Part {
+	part := gofastcore.Part{Kind: gofastcore.PartBody, Number: 1, Blocks: []gofastcore.Block{}}
+	var body []gofastcore.Block
+	if serr == nil && r.s.Depth() == 3 {
+		r.blocks(ctxt{bg: r.set.PageBackground("")}, &body)
+		serr = r.s.Err()
+	}
+	r.noteFailure(&part, "content.xml", serr)
+	// Deletions nothing in the body points at are kept, at the end.
+	if !r.stopped {
+		for _, id := range r.deletionOrder() {
+			r.useDeletion(id, &body)
+		}
+	}
+	// The headers and footers are in another stream (or further on in a
+	// flat file): read with a scanner of their own.
+	var headers, footers []gofastcore.Block
+	if !r.stopped && r.ctx.Err() == nil {
+		saved := r.s
+		r.s = xmlscan.Scanner{}
+		headers, footers = r.masterPages(&part)
+		r.s = saved
+	}
+	part.Blocks = append(part.Blocks, headers...)
+	part.Blocks = append(part.Blocks, body...)
+	part.Blocks = append(part.Blocks, r.endnotes...)
+	part.Blocks = append(part.Blocks, footers...)
+	r.finish(&part, "document body")
+	return part
+}
+
+// finish adds the warnings a part's reading gave rise to and marks its
+// hidden text.
+func (r *reader) finish(part *gofastcore.Part, what string) {
+	if r.stopped && r.limitMsg != "" {
+		part.Warn(gofastcore.SeverityError, gofastcore.WarnLimitExceeded, r.limitMsg)
+		r.limitMsg = "" // said once, on the part where it happened
+	}
+	if r.tracked {
+		part.Warn(gofastcore.SeverityInfo, gofastcore.WarnTextTrackedChanges, "the document has tracked changes; its text is given as if all were accepted, and deleted text is kept in notes")
+		r.tracked = false
+	}
+	if r.clamped > 0 {
+		part.Warn(gofastcore.SeverityInfo, gofastcore.WarnHeadingLevelClamped, fmt.Sprintf("%d headings deeper than level 6", r.clamped))
+		r.clamped = 0
+	}
+	if len(part.Blocks) == 0 && len(part.Warnings) == 0 {
+		part.Warn(gofastcore.SeverityWarning, gofastcore.WarnPartNoText, "the "+what+" has no text and no images")
+	}
+	part.MarkHidden()
 }
 
 // noteFailure turns the error that ended a stream into a warning.

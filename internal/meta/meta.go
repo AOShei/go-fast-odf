@@ -80,6 +80,15 @@ func ReadFrom(s *xmlscan.Scanner, res *Result) {
 			continue
 		}
 		space, local := s.Space(), string(s.Local())
+		if space == ns.Office && local != "meta" && local != "document" && local != "document-meta" && s.Depth() <= 2 {
+			// In a flat file the metadata is one element among others:
+			// what follows it is not metadata.
+			if local == "body" {
+				break
+			}
+			s.Skip()
+			continue
+		}
 		switch {
 		case space == ns.DC && local == "title":
 			m.Title = value(s, res)

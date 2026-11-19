@@ -92,6 +92,8 @@ type Package struct {
 	budget    atomic.Int64
 	ambiguous int
 	recovered *Recovery
+	flat      io.ReaderAt // a flat file, or nil
+	flatSize  int64
 	manifest  map[string]Entry
 	mime      string // what the mimetype member says, or the manifest's root entry
 	damaged   bool   // the manifest could not be read to its end
@@ -273,9 +275,42 @@ func (p *Package) ManifestDamaged() bool { return p.damaged }
 
 // Has reports whether the package has the named member.
 func (p *Package) Has(name string) bool {
+	if p.flat != nil {
+		return flatStreams[Canonical(name)]
+	}
 	_, ok := p.files[Canonical(name)]
 	return ok
 }
+
+// flatStreams are the streams of a package that a flat file holds, all in
+// its one XML document.
+var flatStreams = map[string]bool{"content.xml": true, "styles.xml": true, "meta.xml": true}
+
+// OpenFlat opens a flat OpenDocument file: one XML document whose root,
+// office:document, holds what a package keeps in its streams. Each of
+// those streams reads as the whole file; the readers take from it what
+// they read from their stream.
+func OpenFlat(r io.ReaderAt, size int64, lim Limits) (*Package, error) {
+	var s xmlscan.Scanner
+	s.Reset(io.NewSectionReader(r, 0, size), &xmlscan.Options{Spaces: ns.Spaces, BufferSize: 4096})
+	for {
+		switch s.Next() {
+		case xmlscan.Start:
+			if s.Space() != ns.Office || string(s.Local()) != "document" {
+				return nil, fmt.Errorf("%w: XML whose root is not office:document", ErrNotPackage)
+			}
+			mime, _ := s.Attr(ns.Office, "mimetype")
+			p := &Package{flat: r, flatSize: size, mime: clean.Label(string(mime)), manifest: map[string]Entry{}}
+			p.budget.Store(lim.MaxDecodedBytes)
+			return p, nil
+		case xmlscan.EOF:
+			return nil, fmt.Errorf("%w: not XML", ErrNotZip)
+		}
+	}
+}
+
+// Flat reports whether the package is a flat file.
+func (p *Package) Flat() bool { return p.flat != nil }
 
 // Names returns the member names in archive order. The slice must not be
 // modified.
@@ -299,6 +334,9 @@ func (p *Package) MediaType(name string) string { return p.manifest[Canonical(na
 // Size returns the uncompressed size the archive declares for a member, or
 // -1 if there is no such member.
 func (p *Package) Size(name string) int64 {
+	if p.flat != nil && p.Has(name) {
+		return p.flatSize
+	}
 	f, ok := p.files[Canonical(name)]
 	if !ok {
 		return -1
@@ -318,6 +356,9 @@ func (p *Package) Charge(n int64) bool { return p.budget.Add(-n) >= 0 }
 // fails with ErrBudget.
 func (p *Package) Open(name string) (io.ReadCloser, error) {
 	name = Canonical(name)
+	if p.flat != nil {
+		return p.OpenRaw(name)
+	}
 	f, ok := p.files[name]
 	if !ok {
 		return nil, fmt.Errorf("%w: %s", ErrNotFound, clean.Label(name))
@@ -331,6 +372,12 @@ func (p *Package) Open(name string) (io.ReadCloser, error) {
 // OpenRaw is Open without the check for encryption: an encrypted member
 // is given as the archive holds it.
 func (p *Package) OpenRaw(name string) (io.ReadCloser, error) {
+	if p.flat != nil {
+		if !p.Has(name) {
+			return nil, fmt.Errorf("%w: %s", ErrNotFound, clean.Label(name))
+		}
+		return io.NopCloser(io.NewSectionReader(p.flat, 0, p.flatSize)), nil
+	}
 	f, ok := p.files[Canonical(name)]
 	if !ok {
 		return nil, fmt.Errorf("%w: %s", ErrNotFound, clean.Label(name))

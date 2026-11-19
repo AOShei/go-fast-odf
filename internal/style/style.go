@@ -70,6 +70,7 @@ type Style struct {
 	listStyle  string
 	hasList    bool
 	master     string
+	boxHidden  Tri // On: the sheet or slide is hidden
 }
 
 // Resolved is a style with everything it inherits applied.
@@ -97,6 +98,9 @@ type Resolved struct {
 	ListStyle string
 	// Master is the master page the paragraph style asks for.
 	Master string
+	// BoxHidden says a table style hides its sheet (table:display="false")
+	// or a drawing-page style its slide (presentation:visibility="hidden").
+	BoxHidden bool
 }
 
 // Scope says which automatic styles apply: those of content.xml or those
@@ -287,6 +291,19 @@ func (set *Set) Read(s *xmlscan.Scanner, sc Scope) error {
 						cur.background = bg
 						if cur.family == "page-layout" {
 							set.layouts[set.layoutName] = bg
+						}
+					}
+					// A hidden sheet, a hidden slide.
+					if v, ok := s.Attr(ns.Table, "display"); ok && local == "table-properties" {
+						cur.boxHidden = Off
+						if string(v) == "false" {
+							cur.boxHidden = On
+						}
+					}
+					if v, ok := s.Attr(ns.Presentation, "visibility"); ok && local == "drawing-page-properties" {
+						cur.boxHidden = Off
+						if string(v) == "hidden" {
+							cur.boxHidden = On
 						}
 					}
 				}
@@ -648,6 +665,9 @@ func apply(r *Resolved, st *Style) {
 	}
 	if st.master != "" {
 		r.Master = st.master
+	}
+	if st.boxHidden != Unset {
+		r.BoxHidden = st.boxHidden == On
 	}
 }
 

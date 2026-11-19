@@ -24,6 +24,7 @@ const namespaces = ` xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:
 	` xmlns:dc="http://purl.org/dc/elements/1.1/"` +
 	` xmlns:meta="urn:oasis:names:tc:opendocument:xmlns:meta:1.0"` +
 	` xmlns:svg="urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0"` +
+	` xmlns:presentation="urn:oasis:names:tc:opendocument:xmlns:presentation:1.0"` +
 	` xmlns:loext="urn:org:documentfoundation:names:experimental:office:xmlns:loext:1.0"` +
 	` xmlns:manifest="urn:oasis:names:tc:opendocument:xmlns:manifest:1.0"`
 

@@ -167,6 +167,47 @@ func FuzzExtract(f *testing.F) {
 	})
 }
 
+var (
+	sheetSeeds = []string{
+		`<office:automatic-styles><style:style style:name="t" style:family="table"><style:table-properties table:display="false"/></style:style></office:automatic-styles><office:body><office:spreadsheet>` +
+			`<table:content-validations><table:content-validation table:name="v" table:condition="of:cell-content-is-in-list(&quot;a&quot;;&quot;b&quot;)"/></table:content-validations>` +
+			`<table:table table:name="S" table:style-name="t"><table:table-column table:visibility="collapse" table:number-columns-repeated="2"/>` +
+			`<table:table-row table:number-rows-repeated="3"><table:table-cell table:number-columns-repeated="2" table:content-validation-name="v"><text:p>x</text:p></table:table-cell>` +
+			`<table:table-cell office:value-type="time" office:time-value="PT1H2M3S" table:formula="of:=A1" table:number-rows-spanned="2" table:number-columns-spanned="2"><text:p>t</text:p><office:annotation><text:p>c</text:p></office:annotation></table:table-cell><table:covered-table-cell/></table:table-row>` +
+			`</table:table><table:named-expressions><table:named-range table:name="n" table:cell-range-address="$S.$A$1"/></table:named-expressions></office:spreadsheet></office:body>`,
+	}
+	slideSeeds = []string{
+		`<office:automatic-styles><style:style style:name="d" style:family="drawing-page"><style:drawing-page-properties presentation:visibility="hidden"/></style:style></office:automatic-styles>` +
+			`<office:body><office:presentation><draw:page draw:name="p" draw:style-name="d"><draw:frame presentation:class="title" svg:x="1cm" svg:y="1cm"><draw:text-box><text:p>T</text:p></draw:text-box></draw:frame>` +
+			`<draw:g><draw:custom-shape svg:y="3cm"><text:p>s</text:p></draw:custom-shape></draw:g><presentation:notes><draw:frame><draw:text-box><text:p>n</text:p></draw:text-box></draw:frame></presentation:notes></draw:page></office:presentation></office:body>`,
+	}
+	flatSeeds = []string{
+		`<office:meta><dc:title>t</dc:title></office:meta><office:master-styles><style:master-page style:name="S"><style:footer><text:p>f</text:p></style:footer></style:master-page></office:master-styles>` +
+			`<office:body><office:text><text:p><draw:frame><draw:image><office:binary-data>iVBORw0KGgo=</office:binary-data></draw:image></draw:frame>x</text:p></office:text></office:body>`,
+	}
+)
+
+// fuzzFlat wraps a fragment in the root of a flat file.
+func fuzzFlat(data []byte) []byte {
+	return append(append([]byte(`<office:document`+namespaces+`>`), data...), "</office:document>"...)
+}
+
+// FuzzSheet fuzzes the content of a spreadsheet.
+func FuzzSheet(f *testing.F) { fuzzStream(f, sheetMIME, contentStream, sheetSeeds, richOpts) }
+
+// FuzzSlides fuzzes the content of a presentation.
+func FuzzSlides(f *testing.F) { fuzzStream(f, slideMIME, contentStream, slideSeeds, richOpts) }
+
+// FuzzFlat fuzzes a flat file.
+func FuzzFlat(f *testing.F) {
+	for _, s := range flatSeeds {
+		f.Add([]byte(s))
+	}
+	f.Fuzz(func(t *testing.T, data []byte) {
+		fuzzExtract(t, fuzzFlat(data), richOpts())
+	})
+}
+
 // fuzzCase is one stream and its seeds, for TestMutations.
 type fuzzCase struct {
 	mime  string
@@ -179,6 +220,8 @@ var fuzzCases = []fuzzCase{
 	{textMIME, stylesStream, stylesSeeds},
 	{textMIME, metaStream, metaSeeds},
 	{textMIME, manifestStream, manifestSeeds},
+	{sheetMIME, contentStream, sheetSeeds},
+	{slideMIME, contentStream, slideSeeds},
 }
 
 // TestMutations runs a fixed number of seeded random mutations of every
@@ -199,6 +242,7 @@ func TestMutations(t *testing.T) {
 	whole := smallPackage(t)
 	for i := 0; i < n; i++ {
 		fuzzExtract(t, mutate(rng, append([]byte(nil), whole...)), nil)
+		fuzzExtract(t, fuzzFlat(mutate(rng, []byte(flatSeeds[0]))), richOpts())
 	}
 }
 

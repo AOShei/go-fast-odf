@@ -34,14 +34,16 @@ func TestErrors(t *testing.T) {
 		{"not zip", []byte("hello, this is not an archive"), nil, gofastcore.ErrMalformed},
 		{"tiny", []byte("PK"), nil, gofastcore.ErrMalformed},
 		{"ooxml", ooxml.Bytes(), nil, gofastcore.ErrUnsupported},
-		{"spreadsheet", pkg(t, "application/vnd.oasis.opendocument.spreadsheet", member{name: "content.xml", data: "<x/>"}), nil, gofastcore.ErrUnsupported},
+		{"drawing", pkg(t, "application/vnd.oasis.opendocument.graphics", member{name: "content.xml", data: "<x/>"}), nil, gofastcore.ErrUnsupported},
+		{"not xml", []byte("<<<<>>>> not xml at all"), nil, gofastcore.ErrUnsupported},
+		{"xml not odf", []byte(`<?xml version="1.0"?><html><body/></html>`), nil, gofastcore.ErrUnsupported},
 		{"epub", pkg(t, "application/epub+zip", member{name: "x.xhtml", data: "<x/>"}), nil, gofastcore.ErrUnsupported},
 		{"encrypted", enc, nil, gofastcore.ErrPasswordRequired},
 		{"encrypted with password", enc, &gofastcore.Options{Password: "pw"}, gofastcore.ErrUnsupported},
 		{"no content", pkg(t, textMIME), nil, gofastcore.ErrMalformed},
 		{"input limit", textDoc(t, "", "<text:p>x</text:p>"), &gofastcore.Options{Limits: gofastcore.Limits{MaxInputBytes: 10}}, gofastcore.ErrLimitExceeded},
 		{"no parts", textDoc(t, "", "<text:p>x</text:p>"), &gofastcore.Options{Parts: gofastcore.PartRange{First: 2, Last: 3}}, gofastcore.ErrNoPartsSelected},
-		{"body of another kind", pkg(t, "", member{name: "content.xml", data: `<office:document-content` + namespaces + `><office:body><office:spreadsheet/></office:body></office:document-content>`}), nil, gofastcore.ErrUnsupported},
+		{"body of another kind", pkg(t, "", member{name: "content.xml", data: `<office:document-content` + namespaces + `><office:body><office:drawing/></office:body></office:document-content>`}), nil, gofastcore.ErrUnsupported},
 	}
 	for _, c := range cases {
 		if err := extractErr(c.data, c.opts); !errors.Is(err, c.want) {

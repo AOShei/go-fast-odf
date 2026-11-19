@@ -56,6 +56,11 @@ const (
 	// version does not read (embedded objects, form controls); the
 	// message says what and how many.
 	WarnUnreadContent = odt.WarnUnreadContent
+	// WarnRegionSplit: an area of a sheet whose cells are spread so thinly
+	// that the rectangle around them is mostly empty was not written as
+	// one table; each run of cells side by side in a row is a table of
+	// one row instead.
+	WarnRegionSplit = odt.WarnRegionSplit
 	// WarnPartDamaged: a supporting stream (manifest, styles, metadata)
 	// could not be read to its end; what was read is used.
 	WarnPartDamaged = odt.WarnPartDamaged
@@ -85,8 +90,9 @@ var _ gofastcore.Extractor = (*Extractor)(nil)
 
 // Formats lists the formats this library extracts, as they appear in
 // gofastcore.Source.Format. Templates and master documents are reported
-// as the format they are a variant of.
-func (e *Extractor) Formats() []string { return []string{"odt"} }
+// as the format they are a variant of; flat XML files as fodt, fods and
+// fodp.
+func (e *Extractor) Formats() []string { return []string{"odt", "ods", "odp", "fodt", "fods", "fodp"} }
 
 // Extract reads an OpenDocument file with default settings. It is
 // (&Extractor{}).Extract.
@@ -153,18 +159,33 @@ var kinds = map[string]string{
 	"application/vnd.oasis.opendocument.graphics-flat-xml":     "fodg",
 }
 
+// read are the formats this version reads.
+var read = map[string]bool{"odt": true, "ods": true, "odp": true, "fodt": true, "fods": true, "fodp": true}
+
+// mimeOf gives the media type of a format, for a file that does not say.
+var mimeOf = map[string]string{
+	"odt":  "application/vnd.oasis.opendocument.text",
+	"ods":  "application/vnd.oasis.opendocument.spreadsheet",
+	"odp":  "application/vnd.oasis.opendocument.presentation",
+	"fodt": "application/vnd.oasis.opendocument.text-flat-xml",
+	"fods": "application/vnd.oasis.opendocument.spreadsheet-flat-xml",
+	"fodp": "application/vnd.oasis.opendocument.presentation-flat-xml",
+}
+
 // Extract reads size bytes from r and returns the document.
 //
-// The format is decided from the package itself (its mimetype member,
-// its manifest, or the body of its content), never from a file name. An
-// error wraps one of the gofastcore errors:
+// The input is a package (a zip archive) or a flat file (one XML
+// document). The format is decided from the file itself (its mimetype
+// member, its manifest, the office:mimetype of a flat file, or the body of
+// its content), never from a file name. An error wraps one of the
+// gofastcore errors:
 //
-//   - ErrMalformed: not a zip archive, or a package too damaged to read.
-//   - ErrUnsupported: a zip archive that is not an OpenDocument package;
-//     an OpenDocument file of a kind this version does not read
-//     (spreadsheets, presentations and drawings are not read yet);
-//     an encrypted file when a password is given (decryption is not
-//     implemented yet).
+//   - ErrMalformed: neither a zip archive nor XML, or a package too
+//     damaged to read.
+//   - ErrUnsupported: a zip archive or XML document that is not
+//     OpenDocument; an OpenDocument file of a kind this version does not
+//     read (drawings, charts, formulas, databases); an encrypted file
+//     when a password is given (decryption is not implemented yet).
 //   - ErrPasswordRequired: the file is encrypted and Options.Password is
 //     empty.
 //   - ErrLimitExceeded: the input is larger than Limits.MaxInputBytes, or
@@ -194,7 +215,16 @@ func (e *Extractor) Extract(ctx context.Context, r io.ReaderAt, size int64, opts
 
 	members := int(gofastcore.ResolveLimit(int64(e.MaxArchiveMembers), DefaultMaxArchiveMembers))
 	allowed := max(decode.Left(), 0)
-	pkg, err := odpkg.Open(r, size, odpkg.Limits{MaxDecodedBytes: allowed, MaxMembers: members})
+	limits := odpkg.Limits{MaxDecodedBytes: allowed, MaxMembers: members}
+	pkg, err := odpkg.Open(r, size, limits)
+	if errors.Is(err, odpkg.ErrNotZip) {
+		// Not an archive: perhaps a flat file, one XML document.
+		if flat, ferr := odpkg.OpenFlat(r, size, limits); ferr == nil {
+			pkg, err = flat, nil
+		} else if errors.Is(ferr, odpkg.ErrNotPackage) {
+			err = ferr
+		}
+	}
 	if err != nil {
 		return nil, wrap(err)
 	}
@@ -205,7 +235,7 @@ func (e *Extractor) Extract(ctx context.Context, r io.ReaderAt, size int64, opts
 	switch {
 	case !known && mime != "" && !pkg.Has("content.xml"):
 		return nil, fmt.Errorf("gofastodf: package of type %s: %w", clean.Label(mime), gofastcore.ErrUnsupported)
-	case known && format != "odt":
+	case known && !read[format]:
 		return nil, fmt.Errorf("gofastodf: %s files are not read by this version: %w", format, gofastcore.ErrUnsupported)
 	}
 	if encrypted(pkg) {
@@ -220,19 +250,8 @@ func (e *Extractor) Extract(ctx context.Context, r io.ReaderAt, size int64, opts
 		}
 		return nil, fmt.Errorf("gofastodf: the package has no content.xml: %w", gofastcore.ErrMalformed)
 	}
-	if mime == "" {
-		mime = "application/vnd.oasis.opendocument.text"
-	}
-
-	// The parts: the body is 1, the stored part 2 and only with the
-	// whole document.
-	whole := o.Parts == (gofastcore.PartRange{})
-	if !whole && !o.Parts.Contains(1) {
-		return nil, fmt.Errorf("gofastodf: a text document has 1 part, numbered 1: %w", gofastcore.ErrNoPartsSelected)
-	}
 
 	doc := gofastcore.New("odt")
-	doc.Source = gofastcore.Source{Format: "odt", MIME: mime, Name: o.Name, Size: size}
 	doc.HiddenChecked = odt.HiddenChecked
 	md := meta.Read(pkg)
 	doc.Metadata = md.Metadata
@@ -294,9 +313,35 @@ func (e *Extractor) Extract(ctx context.Context, r io.ReaderAt, size int64, opts
 		}
 		return nil, wrap(err)
 	}
-	if res.NotText != "" {
-		return nil, fmt.Errorf("gofastodf: the document's body is office:%s, which this version does not read: %w", res.NotText, gofastcore.ErrUnsupported)
+	byBody := map[string]string{"text": "odt", "": "odt", "spreadsheet": "ods", "presentation": "odp"}
+	if !known {
+		f, ok := byBody[res.Kind]
+		if !ok {
+			return nil, fmt.Errorf("gofastodf: the document's body is office:%s, which this version does not read: %w", res.Kind, gofastcore.ErrUnsupported)
+		}
+		format = f
+		if pkg.Flat() {
+			format = "f" + f
+		}
+		mime = mimeOf[format]
+	} else if res.Kind == "" && len(res.Parts) == 1 {
+		// No body: one empty part of the kind the format has.
+		switch strings.TrimPrefix(format, "f") {
+		case "ods":
+			res.Parts[0].Kind = gofastcore.PartSheet
+		case "odp":
+			res.Parts[0].Kind = gofastcore.PartSlide
+		}
+	} else if strings.TrimPrefix(format, "f") != byBody[res.Kind] {
+		return nil, fmt.Errorf("gofastodf: a %s file whose body is office:%s: %w", format, res.Kind, gofastcore.ErrMalformed)
 	}
+	if pkg.Flat() {
+		// A flat file names the kind of document it holds, which is that
+		// of a package; it is reported as the flat format.
+		format = "f" + strings.TrimPrefix(format, "f")
+		mime = mimeOf[format]
+	}
+	doc.Source = gofastcore.Source{Format: format, MIME: mime, Name: o.Name, Size: size}
 
 	active := res.ActiveContent + set.Scripts
 	for _, name := range pkg.Names() {
@@ -318,15 +363,23 @@ func (e *Extractor) Extract(ctx context.Context, r io.ReaderAt, size int64, opts
 		warn(gofastcore.SeverityInfo, gofastcore.WarnInputExternalReference, "the document's metadata tells a reader to reload it from an address; nothing was fetched")
 	}
 
-	doc.Parts = append(doc.Parts, res.Body)
-	if res.Stored != nil {
-		switch {
-		case !whole:
-		case o.Limits.MaxParts == 1:
-			warn(gofastcore.SeverityError, gofastcore.WarnLimitExceeded, "2 parts were asked for; the first 1 is given")
-		default:
-			doc.Parts = append(doc.Parts, *res.Stored)
+	// The parts Options.Parts selects; the stored part comes only with
+	// the whole document.
+	whole := o.Parts == (gofastcore.PartRange{})
+	for _, p := range res.Parts {
+		if o.Parts.Contains(p.Number) {
+			doc.Parts = append(doc.Parts, p)
 		}
+	}
+	if whole && res.Stored != nil {
+		doc.Parts = append(doc.Parts, *res.Stored)
+	}
+	if len(doc.Parts) == 0 {
+		return nil, fmt.Errorf("gofastodf: the document has %d parts, numbered from 1: %w", len(res.Parts), gofastcore.ErrNoPartsSelected)
+	}
+	if limit := o.Limits.MaxParts; limit > 0 && len(doc.Parts) > limit {
+		warn(gofastcore.SeverityError, gofastcore.WarnLimitExceeded, fmt.Sprintf("%d parts were asked for; the first %d are given", len(doc.Parts), limit))
+		doc.Parts = doc.Parts[:limit]
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
