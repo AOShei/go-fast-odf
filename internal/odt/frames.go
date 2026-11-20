@@ -309,7 +309,7 @@ func (r *reader) readMember(name string) ([]byte, error) {
 
 // masterPages reads the headers and footers of the master pages in
 // styles.xml. Each distinct one is kept once; one switched off
-// (style:display="false") is kept and flagged.
+// (style:display="false") is kept, with the reason hidden.
 func (r *reader) masterPages(part *gofastcore.Part) (headers, footers []gofastcore.Block) {
 	if !r.pkg.Has("styles.xml") {
 		return nil, nil

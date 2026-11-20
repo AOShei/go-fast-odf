@@ -13,11 +13,11 @@ Status legend: **done**, **partial**, **todo**.
 | `extract.go` | `Extractor`, `Extract`, `ExtractFile`, warning codes, defaults |
 | `internal/xmlscan` | Streaming XML tokenizer, copied from go-fast-ooxml (see NOTICE) |
 | `internal/clean` | Text conventions (UTF-8, control characters, ligatures), copied from go-fast-ooxml |
-| `internal/hidden` | Settles collected hidden spans onto a block, copied from go-fast-ooxml |
+| `internal/display` | Settles collected display spans onto a block, copied from go-fast-ooxml's `internal/hidden` |
 | `internal/odpkg` | Zip package: limits, recovery of a cut archive, `mimetype`, `META-INF/manifest.xml`, encryption detection |
 | `internal/ns` | ODF namespace numbering for xmlscan |
 | `internal/meta` | `meta.xml` to `gofastcore.Metadata` |
-| `internal/style` | `styles.xml` and automatic styles: outline levels, list styles, hidden text, colours, sizes |
+| `internal/style` | `styles.xml` and automatic styles: outline levels, list styles, declared display (`text:display`, opacity on a definite colour), text formatting |
 | `internal/odt` | Text documents: body to blocks, stored part |
 
 ## Phases
@@ -36,7 +36,7 @@ Status legend: **done**, **partial**, **todo**.
 | odt: tables with spans as merges, header rows, repeated rows/columns | done |
 | odt: sections, frames and text boxes in reading order, images | done |
 | odt: footnotes/endnotes, comments, tracked deletions as notes | done |
-| odt: hidden text (display none, hidden paragraphs/sections, conditional text, colour near background, tiny text) | done |
+| odt: hidden text (display none, hidden paragraphs/sections, conditional text, colour near background, tiny text) | done; colour and size checks removed in run 6 |
 | odt: fields as text; user-field-decls to the stored part | done (variable-decls hold no values; nothing stored for them) |
 | Headers and footers from master pages | done |
 | Text budget, limits, warnings | done |
@@ -63,13 +63,14 @@ execs/s per target.
 | `cmd/gofastodf` printing JSON, Markdown or text like gofastooxml | done |
 | ods: header rows of regions (print titles), declared database ranges as native tables | todo |
 | ods: cells' formulas without cached values (warning like ooxml's formula_no_value) | todo |
-| odp: off-slide frames (`off_page`), master-page text, tables in frames checked with a real slide test | todo |
+| odp: master-page text, tables in frames checked with a real slide test | todo |
 | Embedded objects (`draw:object` formulas as `formula`, charts, `draw:object-ole` as children) | done (run 3) |
 | Form controls and their values | done (run 3) |
 | Thematic breaks (core df335f0) for empty bottom-bordered paragraphs | done (run 3) |
 | Sub-documents held whole in a flat file's draw:object handed to children | todo |
-| Core's shared outlier rule (17a0e50), corpus test, dev false positives (automatic-colour opacity, external-link cache sheets) | done (run 5) |
-| Hidden flag as a signal (core 4de43b1): routine unshown data unflagged, outliers over 30 words flagged with odf.unshown_outlier, stored part not hidden, clean-file tests | done (run 4) |
+| Core's shared outlier rule (17a0e50), corpus test, automatic-colour opacity, external-link cache sheets | done (run 5); outlier rule and link-cache exemption removed in run 6 |
+| Hidden flag as a signal (core 4de43b1) | done (run 4); superseded by run 6 |
+| Declared, not judged (core 05bbddb, schema 0.2): `Display` with `hidden` and `no_ink` from what the file declares only; low-contrast, tiny and outlier checks, `HiddenChecked`, the `text.hidden` and `text.unshown_outlier` warnings and the link-cache exemption removed; filtered rows and link-cache sheets reported `hidden`; command flag `-exclude-display`; R6 test | done (run 6) |
 | Unit tests inside internal packages; Table.Cells hrefs in text-document tables | todo |
 
 ### Phase 3: encryption and polish
