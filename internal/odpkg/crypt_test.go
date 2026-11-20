@@ -8,6 +8,7 @@ import (
 	"crypto/sha1"
 	"errors"
 	"io"
+	"os"
 	"testing"
 	"time"
 )
@@ -157,6 +158,65 @@ func TestEncryptedDeflateBomb(t *testing.T) {
 	}
 	if read := budget - p.Remaining(); read > int64(len(data))+64<<10 {
 		t.Errorf("read %d bytes of a %d-byte package", read, len(data))
+	}
+}
+
+// ODF 1.4's inner package is inflated no further than the limit given:
+// past it, ErrBudget, which the extractor gives as ErrLimitExceeded.
+func TestEncryptedPackageLimit(t *testing.T) {
+	data, err := os.ReadFile("../../testdata/encrypted/gcm-argon2id-odf14.odt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	open := func() *Package {
+		p, err := Open(bytes.NewReader(data), int64(len(data)), Limits{MaxDecodedBytes: 1 << 30, MaxMembers: 64})
+		if err != nil {
+			t.Fatal(err)
+		}
+		p.SetPassword("go-fast")
+		return p
+	}
+	p := open()
+	inner, err := p.ReadEncryptedPackage("encrypted-package", 1<<30)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := open().ReadEncryptedPackage("encrypted-package", int64(len(inner))); err != nil {
+		t.Errorf("at the limit: %v", err)
+	}
+	if _, err := open().ReadEncryptedPackage("encrypted-package", int64(len(inner))-1); !errors.Is(err, ErrBudget) {
+		t.Errorf("one byte over the limit: %v, want ErrBudget", err)
+	}
+}
+
+// A package that shares another's key-derivation work is held to the
+// caps of both together.
+func TestShareWork(t *testing.T) {
+	data := encPackage(t, cbcData(`<manifest:key-derivation manifest:key-derivation-name="PBKDF2" manifest:iteration-count="10" manifest:salt="AAAA" manifest:key-size="32"/>`), make([]byte, 32))
+	open := func() *Package {
+		p, err := Open(bytes.NewReader(data), int64(len(data)), Limits{MaxDecodedBytes: 1 << 20, MaxMembers: 16})
+		if err != nil {
+			t.Fatal(err)
+		}
+		p.SetPassword("pw")
+		return p
+	}
+	outer, inner := open(), open()
+	outer.kdfWork.Store(maxPackageIterations)
+	outer.argonWork.Store(maxPackageArgon)
+	inner.ShareWork(outer)
+	if _, err := inner.Open("content.xml"); !errors.Is(err, ErrWork) {
+		t.Errorf("PBKDF2 past the outer package's total: %v, want ErrWork", err)
+	}
+	argon := encPackage(t, `<manifest:encryption-data>`+gcmAlg+sha256SK+argonLOD+`loext:argon2-iterations="1" loext:argon2-memory="64" loext:argon2-lanes="1"/></manifest:encryption-data>`, make([]byte, 32))
+	a, err := Open(bytes.NewReader(argon), int64(len(argon)), Limits{MaxDecodedBytes: 1 << 20, MaxMembers: 16})
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.SetPassword("pw")
+	a.ShareWork(outer)
+	if _, err := a.Open("content.xml"); !errors.Is(err, ErrWork) {
+		t.Errorf("Argon2 past the outer package's total: %v, want ErrWork", err)
 	}
 }
 

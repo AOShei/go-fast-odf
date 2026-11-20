@@ -124,7 +124,7 @@ func TestKeyDerivationHonoursContext(t *testing.T) {
 		"pbkdf2": cbc + `<manifest:key-derivation manifest:key-derivation-name="PBKDF2" manifest:iteration-count="10000000" manifest:salt="AAAA" manifest:key-size="32"/></manifest:encryption-data>`,
 		"argon2id": `<manifest:encryption-data><manifest:algorithm manifest:algorithm-name="http://www.w3.org/2009/xmlenc11#aes256-gcm" manifest:initialisation-vector="AAAAAAAAAAAAAAAA"/>` +
 			`<manifest:key-derivation manifest:key-derivation-name="urn:oasis:names:tc:opendocument:xmlns:manifest:1.0#argon2id" manifest:salt="AAAAAAAAAAAAAAAAAAAAAA==" manifest:key-size="32" ` +
-			`manifest:argon2-iterations="8" manifest:argon2-memory="262144" manifest:argon2-lanes="1"/></manifest:encryption-data>`,
+			`manifest:argon2-iterations="4" manifest:argon2-memory="262144" manifest:argon2-lanes="1"/></manifest:encryption-data>`,
 	}
 	for name, enc := range cases {
 		data := encryptedODT(t, enc)

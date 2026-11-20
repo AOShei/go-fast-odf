@@ -38,7 +38,7 @@ func checkArgon(e *Encryption) error {
 // argonKey derives a key with Argon2id from the start key.
 func (p *Package) argonKey(c *cipherSpec, start []byte) ([]byte, error) {
 	e := c.enc
-	if p.argonWork.Add(int64(e.ArgonMemory)*int64(e.ArgonIterates)) > maxPackageArgon {
+	if p.work().argonWork.Add(int64(e.ArgonMemory)*int64(e.ArgonIterates)) > maxPackageArgon {
 		return nil, fmt.Errorf("%w: the members ask for more Argon2id work than %d KiB-passes in all", ErrWork, maxPackageArgon)
 	}
 	k, err := argon2.IDKeyContext(p.context(), start, c.salt, nil, nil, uint32(e.ArgonIterates), uint32(e.ArgonMemory), uint32(e.ArgonLanes), uint32(c.keySize))

@@ -194,7 +194,7 @@ func (p *Package) key(c *cipherSpec) ([]byte, error) {
 	if c.argon {
 		return p.argonKey(c, start)
 	}
-	if p.kdfWork.Add(int64(c.iter)) > maxPackageIterations {
+	if p.work().kdfWork.Add(int64(c.iter)) > maxPackageIterations {
 		return nil, fmt.Errorf("%w: the members ask for more than %d PBKDF2 iterations in all", ErrWork, maxPackageIterations)
 	}
 	return pbkdf2SHA1(p.context(), start, c.salt, c.iter, c.keySize)
@@ -367,19 +367,40 @@ func (p *Package) Check(name string) error {
 
 // ReadEncryptedPackage decrypts and inflates the member that holds a whole
 // package (ODF 1.4's encrypted-package), and returns its bytes. They are
-// charged to the budget.
-func (p *Package) ReadEncryptedPackage(name string) ([]byte, error) {
+// charged to the budget, and inflating stops past limit bytes, with
+// ErrBudget.
+func (p *Package) ReadEncryptedPackage(name string, limit int64) ([]byte, error) {
 	rc, err := p.Open(name)
 	if err != nil {
 		return nil, err
 	}
 	defer rc.Close()
-	b, err := io.ReadAll(rc)
+	b, err := io.ReadAll(io.LimitReader(rc, limit+1))
 	if err != nil {
 		if errors.Is(err, ErrBudget) {
 			return nil, err
 		}
 		return nil, fmt.Errorf("%w: %s: %v", ErrDamaged, clean.Label(name), err)
 	}
+	if int64(len(b)) > limit {
+		return nil, fmt.Errorf("%w: %s: the package it holds is over %d bytes", ErrBudget, clean.Label(name), limit)
+	}
 	return b, nil
+}
+
+// ShareWork charges the key-derivation work of p to outer's totals, so
+// that a package held in another is held to the same caps.
+func (p *Package) ShareWork(outer *Package) {
+	for outer.shared != nil {
+		outer = outer.shared
+	}
+	p.shared = outer
+}
+
+// work returns the package whose totals key derivation is charged to.
+func (p *Package) work() *Package {
+	if p.shared != nil {
+		return p.shared
+	}
+	return p
 }

@@ -105,6 +105,7 @@ type Package struct {
 	ctx       context.Context // stops key derivation; nil for none
 	kdfWork   atomic.Int64    // PBKDF2 iterations spent
 	argonWork atomic.Int64    // Argon2 KiB-passes spent
+	shared    *Package        // whose totals key derivation is charged to, or nil
 	keyMu     sync.Mutex
 	keys      map[string][]byte // derived keys, by member
 }

@@ -15,6 +15,10 @@ been released yet.
   further than the size of the package; past it, `ErrMalformed`, before
   any decryption. Stored encrypted members, which writers produce, are
   read as before.
+- ODF 1.4's inner package is capped at `Options.Limits.MaxInputBytes`
+  (core's default when unset), counted as it is inflated; past it,
+  `ErrLimitExceeded`. Its members share the outer package's
+  key-derivation caps instead of having their own.
 
 ### Added: decryption (branch `phase-6-decryption`)
 
