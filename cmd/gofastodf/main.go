@@ -47,6 +47,25 @@ var extensions = map[string]bool{
 	".fodt": true, ".fods": true, ".fodp": true,
 }
 
+// childTypes are the media types of the embedded documents this command
+// hands to this library: the OpenDocument formats it reads. Anything else
+// (an OLE object, a drawing, a chart or formula held alone) is listed and
+// not read.
+var childTypes = map[string]bool{
+	"application/vnd.oasis.opendocument.text":                  true,
+	"application/vnd.oasis.opendocument.text-template":         true,
+	"application/vnd.oasis.opendocument.text-master":           true,
+	"application/vnd.oasis.opendocument.text-master-template":  true,
+	"application/vnd.oasis.opendocument.text-web":              true,
+	"application/vnd.oasis.opendocument.spreadsheet":           true,
+	"application/vnd.oasis.opendocument.spreadsheet-template":  true,
+	"application/vnd.oasis.opendocument.presentation":          true,
+	"application/vnd.oasis.opendocument.presentation-template": true,
+	"application/vnd.oasis.opendocument.text-flat-xml":         true,
+	"application/vnd.oasis.opendocument.spreadsheet-flat-xml":  true,
+	"application/vnd.oasis.opendocument.presentation-flat-xml": true,
+}
+
 // displayFlag is -exclude-display: given alone it stands for every reason,
 // and with a value for the reasons named.
 type displayFlag struct{ reasons gofastcore.Display }
@@ -100,6 +119,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		furniture = flags.Bool("furniture", false, "in Markdown and text, include running headers and footers")
 		stored    = flags.Bool("stored", false, "in Markdown and text, include the stored part (data the file keeps but shows nowhere: user fields, named ranges, form fields no page places)")
 		markers   = flags.Bool("part-markers", false, "in Markdown and text, put a line before each part saying which part it is")
+		children  = flags.Bool("children", true, "in Markdown and text, include embedded documents (attachments, members), each after a line naming it; -children=false leaves them out")
 	)
 	var exclude displayFlag
 	flags.Var(&exclude, "exclude-display", "in Markdown and text, leave out what the file declares not displayed: all of it, or with =reasons only those reasons (hidden, no_ink); JSON always has everything")
@@ -154,6 +174,15 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		opts.Parts = gofastcore.PartRange{First: a, Last: b}
 	}
 	extractor := &gofastodf.Extractor{MaxCells: *maxCells}
+	// An embedded object or document is read too if it is one of the
+	// formats of this library, decided by its media type. Core's depth
+	// limit (Limits.MaxDepth) bounds how deeply they nest.
+	opts.Child = func(ctx context.Context, name, mime string, r io.ReaderAt, size int64, o *gofastcore.Options) (*gofastcore.Document, error) {
+		if !childTypes[mime] {
+			return nil, gofastcore.ErrUnsupported
+		}
+		return extractor.Extract(ctx, r, size, o)
+	}
 
 	var inputs []string
 	status := 0
@@ -202,7 +231,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	}
 	w := bufio.NewWriter(out)
 	defer w.Flush()
-	render := &gofastcore.RenderOptions{Furniture: *furniture, Stored: *stored, PartMarkers: *markers, ExcludeDisplay: exclude.reasons}
+	render := &gofastcore.RenderOptions{Furniture: *furniture, Stored: *stored, PartMarkers: *markers, ExcludeDisplay: exclude.reasons, Children: *children}
 
 	written := 0
 	for _, path := range inputs {

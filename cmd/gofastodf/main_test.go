@@ -7,21 +7,30 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/AOShei/go-fast-core"
 )
 
-func writeODT(t *testing.T, path, body string) {
+const content = `<office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0"` +
+	` xmlns:draw="urn:oasis:names:tc:opendocument:xmlns:drawing:1.0" xmlns:xlink="http://www.w3.org/1999/xlink">`
+
+// writeODT writes a text document with body, and extra members given as
+// name and content pairs.
+func writeODT(t *testing.T, path, body string, extra ...string) {
 	t.Helper()
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
 	w, _ := zw.CreateHeader(&zip.FileHeader{Name: "mimetype", Method: zip.Store})
 	w.Write([]byte("application/vnd.oasis.opendocument.text"))
 	w, _ = zw.Create("content.xml")
-	w.Write([]byte(`<office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0">` +
-		`<office:body><office:text>` + body + `</office:text></office:body></office:document-content>`))
+	w.Write([]byte(content + `<office:body><office:text>` + body + `</office:text></office:body></office:document-content>`))
+	for i := 0; i+1 < len(extra); i += 2 {
+		w, _ = zw.Create(extra[i])
+		w.Write([]byte(extra[i+1]))
+	}
 	if err := zw.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -115,5 +124,80 @@ func TestRenderFlags(t *testing.T) {
 	var out, errs bytes.Buffer
 	if code := run(context.Background(), []string{"-exclude-display=unknown", a}, &out, &errs); code != 2 || !strings.Contains(errs.String(), "the reasons are hidden, no_ink\n") {
 		t.Errorf("unknown: exit %d, %q", code, errs.String())
+	}
+}
+
+// nested writes a text document that embeds a text document as Object 1,
+// which embeds another, levels deep, and an OLE object beside the first.
+func nested(t *testing.T, path string, levels int) {
+	t.Helper()
+	object := `<text:p><draw:frame><draw:object xlink:href="./Object 1"/></draw:frame></text:p>`
+	var extra []string
+	prefix := ""
+	for level := 1; level <= levels; level++ {
+		prefix += "Object 1/"
+		extra = append(extra, prefix+"content.xml", content+`<office:body><office:text><text:p>Level `+strconv.Itoa(level)+`.</text:p>`+object+`</office:text></office:body></office:document-content>`)
+	}
+	extra = append(extra, "Object 2", "\xd0\xcf\x11\xe0 not really OLE")
+	writeODT(t, path, `<text:p>Outer.</text:p>`+object+`<text:p><draw:frame><draw:object-ole xlink:href="./Object 2"/></draw:frame></text:p>`, extra...)
+}
+
+// The child dispatcher reads the OpenDocument objects a document embeds,
+// as deep as core's depth limit, and lists anything else unread.
+func TestChildren(t *testing.T) {
+	dir := t.TempDir()
+	a := filepath.Join(dir, "a.odt")
+	nested(t, a, gofastcore.DefaultMaxDepth+1)
+	var out, errs bytes.Buffer
+	if code := run(context.Background(), []string{a}, &out, &errs); code != 0 {
+		t.Fatalf("exit %d: %s", code, errs.String())
+	}
+	var doc gofastcore.Document
+	if err := json.Unmarshal(out.Bytes(), &doc); err != nil {
+		t.Fatal(err)
+	}
+	if err := doc.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if len(doc.Children) != 2 || doc.Children[0].Source.Format != "odt" || doc.Children[1].Warnings[0].Code != gofastcore.WarnChildUnsupported {
+		t.Fatalf("children %+v", doc.Children)
+	}
+	depth := 0
+	for d := doc.Children[0]; ; d = d.Children[0] {
+		depth++
+		if len(d.Parts) == 0 {
+			if depth != gofastcore.DefaultMaxDepth+1 || d.Warnings[0].Code != gofastcore.WarnChildNotExtracted {
+				t.Errorf("depth %d: %+v", depth, d.Warnings)
+			}
+			break
+		}
+		if got := d.Parts[0].Blocks[0].Text; got != "Level "+strconv.Itoa(depth)+"." {
+			t.Errorf("depth %d: %q", depth, got)
+		}
+		if len(d.Children) == 0 {
+			t.Fatalf("depth %d: no children", depth)
+		}
+	}
+}
+
+// -children: on by default, a child's text and the line naming it are in
+// the text output; -children=false leaves both out.
+func TestChildrenFlag(t *testing.T) {
+	dir := t.TempDir()
+	a := filepath.Join(dir, "a.odt")
+	nested(t, a, 1)
+	render := func(args ...string) string {
+		t.Helper()
+		var out, errs bytes.Buffer
+		if code := run(context.Background(), append(append([]string{"-format", "text"}, args...), a), &out, &errs); code != 0 {
+			t.Fatalf("%v: exit %d: %s", args, code, errs.String())
+		}
+		return out.String()
+	}
+	if got := render(); !strings.Contains(got, "Outer.") || !strings.Contains(got, "Level 1.") || !strings.Contains(got, "[child 1: Object 1]") {
+		t.Errorf("default: %q", got)
+	}
+	if got := render("-children=false"); !strings.Contains(got, "Outer.") || strings.Contains(got, "Level 1.") || strings.Contains(got, "[child") {
+		t.Errorf("-children=false: %q", got)
 	}
 }
