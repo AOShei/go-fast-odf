@@ -5,6 +5,7 @@
 package argon2
 
 import (
+	"context"
 	"encoding/binary"
 	"errors"
 	"math/bits"
@@ -29,6 +30,12 @@ var ErrParams = errors.New("argon2: parameters out of range")
 // The caller bounds memory, time and lanes; this function allocates
 // memory KiB.
 func IDKey(password, salt, secret, ad []byte, time, memory, lanes, keyLen uint32) ([]byte, error) {
+	return IDKeyContext(context.Background(), password, salt, secret, ad, time, memory, lanes, keyLen)
+}
+
+// IDKeyContext is IDKey that stops, with the context's error, once ctx is
+// done. It looks at ctx before each segment.
+func IDKeyContext(ctx context.Context, password, salt, secret, ad []byte, time, memory, lanes, keyLen uint32) ([]byte, error) {
 	if time < 1 || lanes < 1 || lanes > maxLanes || keyLen < 4 || memory < minMemory*lanes {
 		return nil, ErrParams
 	}
@@ -54,6 +61,9 @@ func IDKey(password, salt, secret, ad []byte, time, memory, lanes, keyLen uint32
 	for n := uint32(0); n < time; n++ {
 		for slice := uint32(0); slice < syncPts; slice++ {
 			for lane := uint32(0); lane < lanes; lane++ {
+				if err := ctx.Err(); err != nil {
+					return nil, err
+				}
 				segment(B, n, slice, lane, lanes, q, seg, m, time)
 			}
 		}

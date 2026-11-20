@@ -11,6 +11,7 @@ package odpkg
 
 import (
 	"archive/zip"
+	"context"
 	"errors"
 	"fmt"
 	"hash/crc32"
@@ -100,8 +101,9 @@ type Package struct {
 	mime      string // what the mimetype member says, or the manifest's root entry
 	damaged   bool   // the manifest could not be read to its end
 	password  string
-	kdfWork   atomic.Int64 // PBKDF2 iterations spent
-	argonWork atomic.Int64 // Argon2 KiB-passes spent
+	ctx       context.Context // stops key derivation; nil for none
+	kdfWork   atomic.Int64    // PBKDF2 iterations spent
+	argonWork atomic.Int64    // Argon2 KiB-passes spent
 	keyMu     sync.Mutex
 	keys      map[string][]byte // derived keys, by member
 }

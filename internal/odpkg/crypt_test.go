@@ -3,6 +3,9 @@ package odpkg
 import (
 	"archive/zip"
 	"bytes"
+	"context"
+	"crypto/pbkdf2"
+	"crypto/sha1"
 	"errors"
 	"io"
 	"testing"
@@ -88,6 +91,21 @@ func TestEncryptionLimits(t *testing.T) {
 		}
 		if d := time.Since(start); d > time.Second {
 			t.Errorf("%s: took %v", c.name, d)
+		}
+	}
+}
+
+// pbkdf2SHA1 gives what crypto/pbkdf2 gives, for key sizes of one block
+// and of several.
+func TestPBKDF2MatchesStdlib(t *testing.T) {
+	for _, c := range []struct{ iter, size int }{{1, 16}, {2, 20}, {1024, 16}, {1000, 32}, {4097, 56}} {
+		want, err := pbkdf2.Key(sha1.New, "start key", []byte("salt"), c.iter, c.size)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := pbkdf2SHA1(context.Background(), []byte("start key"), []byte("salt"), c.iter, c.size)
+		if err != nil || !bytes.Equal(got, want) {
+			t.Errorf("%d iterations, %d bytes: %x, %v; want %x", c.iter, c.size, got, err, want)
 		}
 	}
 }

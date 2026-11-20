@@ -3,13 +3,15 @@ package odpkg
 import (
 	"bytes"
 	"compress/flate"
+	"context"
 	"crypto/aes"
 	"crypto/cipher"
-	"crypto/pbkdf2"
+	"crypto/hmac"
 	"crypto/sha1"
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"hash"
@@ -173,6 +175,17 @@ const argonLO = "urn:org:documentfoundation:names:experimental:office:manifest:a
 // SetPassword sets the password encrypted members are opened with.
 func (p *Package) SetPassword(pw string) { p.password = pw }
 
+// SetContext sets the context key derivation looks at: once it is done,
+// deriving a key stops with its error.
+func (p *Package) SetContext(ctx context.Context) { p.ctx = ctx }
+
+func (p *Package) context() context.Context {
+	if p.ctx == nil {
+		return context.Background()
+	}
+	return p.ctx
+}
+
 // key derives the key of a member, charging the work to the package.
 func (p *Package) key(c *cipherSpec) ([]byte, error) {
 	h := c.start()
@@ -184,7 +197,34 @@ func (p *Package) key(c *cipherSpec) ([]byte, error) {
 	if p.kdfWork.Add(int64(c.iter)) > maxPackageIterations {
 		return nil, fmt.Errorf("%w: the members ask for more than %d PBKDF2 iterations in all", ErrWork, maxPackageIterations)
 	}
-	return pbkdf2.Key(sha1.New, string(start), c.salt, c.iter, c.keySize)
+	return pbkdf2SHA1(p.context(), start, c.salt, c.iter, c.keySize)
+}
+
+// pbkdf2SHA1 is PBKDF2 with HMAC-SHA1 (RFC 8018, section 5.2), as
+// crypto/pbkdf2 computes it, but stopping with the context's error once
+// ctx is done.
+func pbkdf2SHA1(ctx context.Context, password, salt []byte, iter, keyLen int) ([]byte, error) {
+	prf := hmac.New(sha1.New, password)
+	size := prf.Size()
+	var dk, u []byte
+	for i := uint32(1); len(dk) < keyLen; i++ {
+		prf.Reset()
+		prf.Write(salt)
+		prf.Write(binary.BigEndian.AppendUint32(nil, i))
+		dk = prf.Sum(dk)
+		t := dk[len(dk)-size:]
+		u = append(u[:0], t...)
+		for n := 1; n < iter; n++ {
+			if n&0xfff == 0 && ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
+			prf.Reset()
+			prf.Write(u)
+			u = prf.Sum(u[:0])
+			subtle.XORBytes(t, t, u)
+		}
+	}
+	return dk[:keyLen], nil
 }
 
 // decrypt returns a member's plaintext: still compressed, as raw DEFLATE.

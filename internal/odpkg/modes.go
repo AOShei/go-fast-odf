@@ -41,8 +41,11 @@ func (p *Package) argonKey(c *cipherSpec, start []byte) ([]byte, error) {
 	if p.argonWork.Add(int64(e.ArgonMemory)*int64(e.ArgonIterates)) > maxPackageArgon {
 		return nil, fmt.Errorf("%w: the members ask for more Argon2id work than %d KiB-passes in all", ErrWork, maxPackageArgon)
 	}
-	k, err := argon2.IDKey(start, c.salt, nil, nil, uint32(e.ArgonIterates), uint32(e.ArgonMemory), uint32(e.ArgonLanes), uint32(c.keySize))
+	k, err := argon2.IDKeyContext(p.context(), start, c.salt, nil, nil, uint32(e.ArgonIterates), uint32(e.ArgonMemory), uint32(e.ArgonLanes), uint32(c.keySize))
 	if err != nil {
+		if p.context().Err() != nil {
+			return nil, err
+		}
 		return nil, fmt.Errorf("%w: %v", ErrDamaged, err)
 	}
 	return k, nil

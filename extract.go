@@ -249,6 +249,7 @@ func (e *Extractor) Extract(ctx context.Context, r io.ReaderAt, size int64, opts
 			return nil, fmt.Errorf("gofastodf: the document is encrypted: %w", gofastcore.ErrPasswordRequired)
 		}
 		pkg.SetPassword(o.Password)
+		pkg.SetContext(ctx)
 		if !pkg.Has("content.xml") && pkg.Encrypted(encryptedPackage) {
 			return e.extractWhole(ctx, pkg, decode, size, &o)
 		}
@@ -453,6 +454,9 @@ func encrypted(pkg *odpkg.Package) bool {
 // wrap turns a package error into one that wraps the matching shared
 // error.
 func wrap(err error) error {
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return err
+	}
 	shared := gofastcore.ErrMalformed
 	switch {
 	case errors.Is(err, odpkg.ErrNotPackage):
