@@ -6,6 +6,18 @@ been released yet.
 
 ## [Unreleased]
 
+### Changed: stored kinds (branch `stored-kinds`)
+
+- Pins go-fast-core `ebecf3c` (`RenderOptions.StoredKinds`,
+  `StoredKindNames`, and the `Validate` rule that every `type=field` note
+  carries `stored=field_code`).
+- Conditional-text field notes (condition and both values) carry
+  `stored=field_code`: Markdown and text show the field's current value
+  and leave the condition out unless stored data is asked for.
+- Command: `-stored[=kinds]`, as `COMMAND_FLAGS.md`: alone, `=true` or
+  `=all` for every kind, `=false` or `=` for none, `=k1,k2` (or `+`) for
+  those kinds; an unknown kind is an error listing the kinds, exit 2.
+
 ### Added: sheets and slides (branch `phase-7-sheets-slides`)
 
 - `odf.formula_no_value` (info): a sheet's cells that hold a formula and
