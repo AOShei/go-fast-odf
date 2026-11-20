@@ -482,10 +482,16 @@ func readText(s *xmlscan.Scanner, t *textProps) {
 			t.scale = p
 		}
 	}
-	if v, ok := s.Attr(ns.LOExt, "opacity"); ok {
+	// loext:opacity is the alpha of the font colour. LibreOffice writes
+	// "0%" beside the automatic colour (use-window-font-color), whose
+	// alpha means nothing; it is taken only with a definite colour, and a
+	// definite colour given without it is opaque.
+	if v, ok := s.Attr(ns.LOExt, "opacity"); ok && t.color.Known() {
 		if p, ok := percent(string(v)); ok {
 			t.opacity, t.opSet = p, true
 		}
+	} else if t.color.Set {
+		t.opacity, t.opSet = 100, true
 	}
 	if v, ok := s.Attr(ns.FO, "font-weight"); ok {
 		t.bold = Off

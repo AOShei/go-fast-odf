@@ -113,6 +113,33 @@ note =.$Lists.A1:A3`)
 	}
 }
 
+// LibreOffice's hidden copy of an externally linked sheet is routine and
+// not flagged; another hidden sheet is.
+func TestLinkCacheSheet(t *testing.T) {
+	auto := `<style:style style:name="ta_extref" style:family="table"><style:table-properties table:display="false"/></style:style>`
+	body := `<office:spreadsheet><table:table table:name="Main"><table:table-row>` + cell("=x") + `</table:table-row></table:table>` +
+		`<table:table table:name="&apos;file:///data/source.ods&apos;#Data" table:print="false" table:style-name="ta_extref"><table:table-row>` + cell("cached") + `</table:table-row></table:table>` +
+		`<table:table table:name="Secret" table:style-name="ta_extref"><table:table-row>` + cell("hidden") + `</table:table-row></table:table></office:spreadsheet>`
+	doc := extract(t, bodyDoc(t, sheetMIME, auto, body), nil)
+	if doc.Parts[1].Hidden != 0 || doc.Parts[1].Blocks[0].Hidden != 0 || doc.Parts[2].Hidden != gofastcore.HiddenInvisible {
+		t.Errorf("link cache %v %v, hidden sheet %v", doc.Parts[1].Hidden, doc.Parts[1].Blocks[0].Hidden, doc.Parts[2].Hidden)
+	}
+}
+
+// LibreOffice writes loext:opacity="0%" beside the automatic font colour;
+// it means nothing there. With a definite colour it is transparency.
+func TestOpacityWithAutomaticColour(t *testing.T) {
+	common := `<style:default-style style:family="paragraph"><style:text-properties style:use-window-font-color="true" loext:opacity="0%" fo:font-size="12pt"/></style:default-style>` +
+		`<style:style style:name="Red" style:family="text"><style:text-properties fo:color="#ff0000"/></style:style>` +
+		`<style:style style:name="Clear" style:family="text"><style:text-properties fo:color="#ff0000" loext:opacity="0%"/></style:style>`
+	data := textDoc(t, "", `<text:p>Plain <text:span text:style-name="Red">red</text:span> and <text:span text:style-name="Clear">clear</text:span></text:p>`,
+		member{name: "styles.xml", data: stylesXML(common, "", "")})
+	b := body(t, extract(t, data, nil))
+	if got, h := hiddenOf(b[0]); got != "clear" || h != gofastcore.HiddenTransparent {
+		t.Errorf("got %q %v", got, h)
+	}
+}
+
 func TestSpreadsheetLimits(t *testing.T) {
 	// One cell with text repeated over a million rows and many columns.
 	body := `<office:spreadsheet><table:table table:name="S"><table:table-row table:number-rows-repeated="1048576">` +

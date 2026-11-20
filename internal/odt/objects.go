@@ -577,7 +577,7 @@ func (r *reader) placeControl(c ctxt, dst *[]gofastcore.Block) {
 
 // controlBlocks writes a control's blocks. The value of a hidden control
 // or a password field is never shown, but form values are routine data:
-// it is flagged only as an outlier (MaxUnshownWords).
+// it is flagged only as an outlier (gofastcore.UnshownOutlier).
 func (r *reader) controlBlocks(ctl *control, hidden gofastcore.Hidden, dst *[]gofastcore.Block, stored bool) {
 	if text := ctl.text(); text != "" {
 		b := gofastcore.Block{Kind: gofastcore.KindParagraph, Text: text, Attrs: map[string]string{"control": ctl.kind}}

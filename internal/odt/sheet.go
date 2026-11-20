@@ -268,7 +268,7 @@ func (r *reader) namedRanges(sheet string) {
 func (r *reader) sheet(n int) gofastcore.Part {
 	name := clean.Name(r.attr(ns.Table, "name"))
 	part := gofastcore.Part{Kind: gofastcore.PartSheet, Number: n, Name: name}
-	if r.set.Box(r.sc, "table", r.attr(ns.Table, "style-name")).BoxHidden {
+	if r.set.Box(r.sc, "table", r.attr(ns.Table, "style-name")).BoxHidden && !linkCache(name) {
 		part.Hidden = gofastcore.HiddenInvisible
 	}
 	sh := &sheetIn{choices: map[string]*[4]int{}}
@@ -280,6 +280,14 @@ func (r *reader) sheet(n int) gofastcore.Part {
 	}
 	r.finish(&part, "sheet")
 	return part
+}
+
+// linkCache reports whether a sheet is LibreOffice's copy of a sheet of
+// another file that formulas refer to: named 'address'#Sheet, and kept
+// hidden by design. It is routine data the file keeps and never shows,
+// not hiding, so it is not flagged.
+func linkCache(name string) bool {
+	return strings.HasPrefix(name, "'") && strings.Contains(name, "'#")
 }
 
 // sheetBody reads the children of a table or of a group of rows or

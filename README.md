@@ -49,7 +49,7 @@ One part of kind `body`, numbered 1, and, when the document stores values it nev
 | `office:annotation` | `note`, type `comment`, with `author` and `date` |
 | `text:tracked-changes` | the body is the text with every change accepted; each deletion is a `note` of type `deletion` where `text:change` marks it (or at the end if nothing marks it) |
 | `text:drop-down` | its value in the text; the values offered as a `note` of type `choices`, `field` its name |
-| `text:conditional-text` | its current value in the text; condition and both values as a `note` of type `field`, not flagged (an outlier over 30 words is) |
+| `text:conditional-text` | its current value in the text; condition and both values as a `note` of type `field`, not flagged (an outlier by `gofastcore.UnshownOutlier` is) |
 | fields (`text:date`, `text:page-number`, `text:author-name`, variables, ...) | their displayed value, in the text |
 | an empty paragraph of the body whose style (after inheritance) has a bottom border and no top, left or right border, or is LibreOffice's "Horizontal Line" style (`Horizontal_20_Line`) | `thematic_break`, `Origin` `inferred` (ODF has no rule element; this is what LibreOffice's AutoCorrect makes of `---`). Not when a paragraph beside it has the same border (a box), and never in table cells, list items, notes, comments, frames, headers or footers. Bordered paragraphs with text and literal `* * *` stay paragraphs |
 | `text:ruby` | base text, then the annotation in brackets |
@@ -93,28 +93,27 @@ A flat file is one XML document (`office:document`) holding metadata, styles, ma
 
 `HiddenChecked` is `invisible+tiny+low_contrast+invisible_chars`. All checks are cheap and always run; `Options.DeepHidden` changes nothing.
 
-The flag marks a hiding mechanism applied to content that would otherwise be seen, as go-fast-core's "What earns a flag" asks. **Data OpenDocument files routinely keep and never show is extracted and not flagged**: metadata, user field declarations (`text:user-field-decls`), named ranges and expressions and database ranges, conditional-text conditions and their other value, formula strings (`Table.Cells`), comments, tracked deletions, form values (also of hidden controls and password fields, and of controls placed nowhere). The `stored` part is not hidden as a whole, and renderers leave it out unless `RenderOptions.Stored`. **Outliers** are flagged: one such item holding more than `MaxUnshownWords` (30) words is flagged `invisible`, and its part carries `odf.unshown_outlier`. A clean, ordinary file comes out with no hidden flag and no `text.hidden` warning (tested).
+The flag marks a hiding mechanism applied to content that would otherwise be seen, as go-fast-core's "What earns a flag" asks. **Data OpenDocument files routinely keep and never show is extracted and not flagged**: metadata, user field declarations (`text:user-field-decls`), named ranges and expressions and database ranges, conditional-text conditions and their other value, formula strings (`Table.Cells`), comments, tracked deletions, form values (also of hidden controls and password fields, and of controls placed nowhere). The `stored` part is not hidden as a whole, and renderers leave it out unless `RenderOptions.Stored`. **Outliers** are flagged by core's shared rule, `gofastcore.UnshownOutlier`: one such item holding more than 30 words or more than 300 characters other than white space (which catches text without spaces, such as Chinese or Japanese, and encoded payloads such as base64) is flagged `invisible`, and its part carries `text.unshown_outlier`. No kind of item is exempted: none trips the character rule in clean files of the corpus. LibreOffice's hidden copies of sheets of other files that formulas refer to (sheets named `'address'#Sheet`) are routine and not flagged; other hidden sheets are. A clean, ordinary file comes out with no hidden flag and no `text.hidden` warning (tested).
 
 | Reason | When |
 |---|---|
 | `invisible` | `text:display="none"` in a text, paragraph or inherited style; `text:hidden-paragraph`, `text:hidden-text` and sections with `text:display="condition"` that the file records as hidden (`text:is-hidden="true"`) or whose condition is literally true (conditions are not evaluated, and a conditional section is not flagged for having one); a section with `text:display="none"`; fields with `text:display="none"`; collapsed or filtered table rows and columns; hidden sheets and slides; frames and shapes with `draw:display="none"` or on a layer with `draw:display="none"` (`printer`, shown only in print, is not flagged); a header or footer switched off (`style:display="false"`); an outlier of routine unshown data (below) |
 | `tiny` | font size under 2 pt after relative sizes and character scaling (`style:text-scale`) |
 | `low_contrast` | `fo:color` against the nearest background: the characters' own background, else the paragraph's, else the table cell's, section's or frame's, else the page's (the first master page's layout), else white |
-| `transparent` | LibreOffice's `loext:opacity` of 0 (found, not listed as checked) |
+| `transparent` | LibreOffice's `loext:opacity` of 0 on a definite font colour (found, not listed as checked). LibreOffice writes `loext:opacity="0%"` beside the automatic colour in its default styles, where it means nothing; it is ignored there, and a colour given without opacity is opaque |
 | `invisible_chars` | core's scan, on every block |
 
 Limits of the checks: text whose colour is the program's choice (`style:use-window-font-color`) is not compared; the page background is that of the first master page; frames and shapes drawn over text are not compared (`occluded` is not checked); Asian and complex-script font sizes are not read. In a spreadsheet the cell style's colour and size are judged for the cell as a whole, and a paragraph style inside the cell is judged on its own; a cell's text is not compared with pictures or shapes over it. On a slide, text is compared with its own frame's fill and the slide's background, not with pictures or shapes behind the frame.
 
 ## Warnings
 
-Shared codes raised: `part.failed`, `part.no_text`, `text.hidden`, `text.tracked_changes`, `structure.heading_level_clamped`, `input.repaired`, `input.ambiguous`, `input.active_content` (Basic or other scripts in the package, event handlers, links that run macros, applets; none of it is read or run), `input.external_reference` (linked pictures, linked sections, plug-ins, an auto-reload address; nothing is fetched), `limit.exceeded`.
+Shared codes raised: `part.failed`, `part.no_text`, `text.hidden`, `text.unshown_outlier`, `text.tracked_changes`, `structure.heading_level_clamped`, `input.repaired`, `input.ambiguous`, `input.active_content` (Basic or other scripts in the package, event handlers, links that run macros, applets; none of it is read or run), `input.external_reference` (linked pictures, linked sections, plug-ins, an auto-reload address; nothing is fetched), `limit.exceeded`.
 
 Codes of this library:
 
 | Code | What happened |
 |---|---|
 | `odf.unread_content` | The document holds content this version does not read: an embedded formula or chart it could not read, a document held whole in a flat file, plug-ins, pictures over 64 MiB held in a flat file. The message counts them |
-| `odf.unshown_outlier` | An item of data the file keeps and never shows holds more than 30 words (`MaxUnshownWords`); it is flagged `invisible` |
 | `odf.region_split` | An area of a sheet with thinly spread cells was written as one table per run of cells in a row |
 | `odf.part_damaged` | A supporting stream (manifest, styles, metadata) could not be read to its end; what was read is used |
 | `odf.property_truncated` | A metadata value was cut at 64 KiB, or keywords or user-defined properties beyond 256 were left out |
@@ -127,6 +126,10 @@ Codes of this library:
 ## Limits
 
 Every limit of `gofastcore.Options.Limits` applies. `MaxDecodedBytes` (default 2 GiB) is charged per byte read from the archive and shared with embedded documents. `MaxTextBytes` (default 256 MiB) is charged for every block (`BlockCost` plus its text and marker), every table cell (`CellCost` plus its text) and link targets; a paragraph stops growing when it would exceed what is left, so `text:s` with a huge count cannot expand past the budget. `Extractor.MaxCells` (default 20 million) bounds table cells; repetition attributes are capped at 2^20 rows or cells each and tables at 16,384 columns. The XML scanner refuses DTDs and bounds nesting depth and token size. A cut archive is read through the members' own headers (`input.repaired`).
+
+## Corpus test
+
+`TestCorpus` runs every odt, ods, odp and flat file of the public corpus (`GOFAST_CORPUS`, else `../.testdata/corpus`; skipped when absent) under `dev/` and `heldout/`, each with a 10 s limit, 32 MiB of text and 512 MiB of decompression, and logs a tally per set (files, results and errors by kind, hidden blocks by reason, warnings by code). It fails on a panic, a Validate failure or a timeout. With `-v` it also lists each hidden flag in `dev/` files with an excerpt. Held-out files are counted, never shown.
 
 ## Fuzzing
 
@@ -144,7 +147,7 @@ In every kind of document, `draw:object` and `draw:object-ole` in a frame are re
 - **Charts** (a sub-document with `chart:chart`) give a `caption` block with the chart's title, then a `table` block of the data the chart keeps in its own table (header rows as `HeaderRows`), with `Attrs`: `role=chart`, `chart` the chart class (`bar`, `line`, ...), `x_axis` and `y_axis` the axis titles, `name` the frame's name.
 - When a formula or chart became blocks, the frame's replacement picture (`ObjectReplacements/Object N`) is not given: it is a drawing of the same thing.
 - **Other sub-documents** (a text document or spreadsheet embedded in another) are packed as a package of their own (members stored, `mimetype` first, the media type from the manifest or else from its body element) and handed to `Options.ExtractChild`; **OLE objects** (`draw:object-ole`, a member such as `Object 4`) are handed on as stored, with the manifest's media type. Each appears in `Document.Children`, extracted or listed. The decompression budget is settled with the shared budget before and after each. Linked objects (an address outside the package) are counted in `input.external_reference` and not fetched.
-- **Form controls** (`office:forms`, placed by `draw:control`) give a paragraph where they stand: label and value as `label: value` (a check box's value is `checked`), `Attrs["field"]` the control's name and `Attrs["control"]` its kind; a list box or combo box also gives a `choices` note of its options. Controls that no `draw:control` places go to the `stored` part with `stored=form_field`. Form values are routine data: the values of hidden controls, password fields and unplaced controls are flagged `invisible` only as outliers (over 30 words).
+- **Form controls** (`office:forms`, placed by `draw:control`) give a paragraph where they stand: label and value as `label: value` (a check box's value is `checked`), `Attrs["field"]` the control's name and `Attrs["control"]` its kind; a list box or combo box also gives a `choices` note of its options. Controls that no `draw:control` places go to the `stored` part with `stored=form_field`. Form values are routine data: the values of hidden controls, password fields and unplaced controls are flagged `invisible` only as outliers (`gofastcore.UnshownOutlier`).
 
 ## Not read (yet)
 

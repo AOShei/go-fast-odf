@@ -253,21 +253,13 @@ func (r *reader) textBody(serr error) gofastcore.Part {
 	return part
 }
 
-// MaxUnshownWords is how many words one item of data the file keeps and
-// never shows (a user field, a named range, a condition, a form value
-// placed nowhere) may hold before it is an outlier. Such data is routine
-// and is not flagged hidden; an item above this is out of proportion for
-// its kind, and is flagged invisible with WarnUnshownOutlier.
-const MaxUnshownWords = 30
-
-// WarnUnshownOutlier: an item of data the file keeps and never shows
-// holds more than MaxUnshownWords words; it is flagged invisible.
-const WarnUnshownOutlier = "odf.unshown_outlier"
-
-// unshown flags b invisible if it is an outlier, and counts it for the
-// warning of the part it goes to (stored says the stored part).
+// unshown flags b invisible if it is an outlier by core's rule
+// (gofastcore.UnshownOutlier: routine unshown data out of proportion for
+// its kind), and counts it for the warning of the part it goes to (stored
+// says the stored part). Such data (a user field, a named range, a
+// condition, a form value placed nowhere) is otherwise not flagged.
 func (r *reader) unshown(b *gofastcore.Block, stored bool) {
-	if len(strings.Fields(b.Text)) <= MaxUnshownWords {
+	if !gofastcore.UnshownOutlier(b.Text) {
 		return
 	}
 	b.Hidden |= gofastcore.HiddenInvisible
@@ -280,8 +272,9 @@ func (r *reader) unshown(b *gofastcore.Block, stored bool) {
 
 func outlierWarning(part *gofastcore.Part, n int) {
 	if n > 0 {
-		part.Warn(gofastcore.SeverityWarning, WarnUnshownOutlier,
-			fmt.Sprintf("%d items of data the file keeps and never shows hold more than %d words each", n, MaxUnshownWords))
+		part.Warn(gofastcore.SeverityWarning, gofastcore.WarnTextUnshownOutlier,
+			fmt.Sprintf("%d items of data the file keeps and never shows hold more than %d words or %d characters each",
+				n, gofastcore.UnshownOutlierWords, gofastcore.UnshownOutlierChars))
 	}
 }
 
