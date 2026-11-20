@@ -71,8 +71,10 @@ note =.$Lists.A1:A3`)
 	if b[0].Loc.Range != "A1:C3" || b[1].Loc.Range != "E7:F8" || len(b[1].Table.Merges) != 1 {
 		t.Errorf("ranges %q %q merges %v", b[0].Loc.Range, b[1].Loc.Range, b[1].Table.Merges)
 	}
-	if b[0].Origin != gofastcore.OriginInferred {
-		t.Error("region not inferred")
+	// A1:C3 is exactly the database range DB, which contains a header
+	// unless the file says otherwise; E7:F8 is only inferred.
+	if b[0].Origin != gofastcore.OriginNative || b[0].Table.HeaderRows != 1 || b[1].Origin != gofastcore.OriginInferred {
+		t.Errorf("origins %v %v, header rows %d", b[0].Origin, b[1].Origin, b[0].Table.HeaderRows)
 	}
 	var formula, date bool
 	for _, c := range b[0].Table.Cells {

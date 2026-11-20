@@ -6,6 +6,25 @@ been released yet.
 
 ## [Unreleased]
 
+### Added: sheets and slides (branch `phase-7-sheets-slides`)
+
+- `odf.formula_no_value` (info): a sheet's cells that hold a formula and
+  no stored result (no `office:*value` attribute, no text) are counted,
+  one warning per sheet, worded as go-fast-ooxml's
+  `ooxml.formula_no_value`. The formulas stay in `Table.Cells`.
+- ods header rows: `table:table-header-rows` (print titles) give a
+  region's `HeaderRows` when they are its first rows; a region exactly
+  equal to a declared `table:database-range` with a header (the default)
+  gets `HeaderRows: 1` and `Origin` `native` (was `inferred`).
+- odp master-page text: shapes of a used `style:master-page` that are not
+  placeholders are given on every slide that uses the master and shows
+  its objects (`presentation:background-objects-visible`, followed
+  through the drawing-page style's parents), before the notes, as
+  `header` (upper half) or `footer` (lower half), as go-fast-ooxml does.
+  A hidden slide's copy is hidden with it. The copies are bounded at
+  2^20 blocks over a presentation, each charged to the text budget; a
+  slide past the bound gets `limit.exceeded`.
+
 ### Changed: decryption limits (branch `review-2`)
 
 - Argon2id is capped at 256 MiB of memory per key (was 1 GiB), memory

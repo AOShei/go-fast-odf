@@ -79,6 +79,7 @@ One part of kind `sheet` per `table:table`, `Name` the sheet name, `Display` `hi
 
 - **Cells** are read with the text reader (spans, display reasons, links, comments). Repeated rows and columns are counted, not stored, while empty; repeated cells with content are written out, bounded by `MaxCells` and the text budget. Coordinates are capped at 65,536 columns and 16 million rows. While a sheet is read its cells are held at about 48 bytes each before its tables are made, and that is counted against what is left of `MaxTextBytes`, so a sheet holds at most about 5 million cells at the default limit (a few bytes of repeated cells cannot fill memory).
 - **Used regions** are tables, `Origin` `inferred`, `Loc.Range` in A1 notation (`A1:C3`): rows with cells that follow one another (or that a merged cell spans) form a band, and within a band touching columns with cells form a region. A region whose rectangle is more than four times its cells (plus 1,024) is written as one table per run of cells in a row, with `odf.region_split`.
+- **Header rows** come only from what the file declares, never from formatting. Rows in `table:table-header-rows` (print titles, repeated on each printed page) are a region's `HeaderRows` when they are its first rows (title rows above the region are empty). A region that is exactly a `table:database-range` containing a header (`table:contains-header` is true unless set to `false`) has `HeaderRows: 1` at least and `Origin` `native`.
 - **Text** is what the cell displays (its paragraphs joined with `\n`); a cell with a value and no paragraph shows the value. **Dates and times stored as values are written in ISO 8601** (`2026-03-04`, `14:30:00` from `PT14H30M00S`), whatever the display, as core asks.
 - **Merged cells** (`number-columns-spanned`, `number-rows-spanned`) are `Merges`; overlapping merges after the first are dropped.
 - With `Options.Cells`, `Table.Cells` has each cell's formula (`table:formula` as written, never evaluated), and its type and stored value where the text does not show the value (`number`, `date`, `bool`). With `Options.Spans`, a cell's link is its `href`.
@@ -94,6 +95,7 @@ One part of kind `slide` per `draw:page`. `Name` is the text of the title frame 
 
 - Frames, shapes and groups are put in reading order: the title first, then from top to bottom (`svg:y`) and, at one height, left to right (`svg:x`); an item with no position keeps the place of the one before it.
 - The title's paragraphs are `heading` level 1. Footer, date-time and page-number placeholders are `footer` blocks, header placeholders `header` blocks. Other text is paragraphs and list items as in a text document.
+- **Master-page text.** The shapes of a slide's master page (`draw:master-page-name` → `style:master-page` in styles.xml) that are not placeholders (no `presentation:class`, not `presentation:placeholder="true"`) are given on every slide that uses the master and shows its objects, before its notes, in reading order, as go-fast-ooxml gives a layout's and master's own text. A slide whose drawing-page style (or a parent of it) declares `presentation:background-objects-visible="false"` does not show them and gets none. A hidden slide's copy is hidden with the slide. The text of a master is on every slide that uses it, so a long master and many slides can ask for much more than the file holds: each copy is charged to the text budget, at most 2^20 blocks are repeated in this way over a presentation, and a slide past that says so with `limit.exceeded`. Their text is `header` if the shape starts in the upper half of the master's page layout (`fo:page-height`; 15.75 cm when none is given), `footer` if in the lower; pictures and tables keep their kinds. The master's placeholders (title, outline, header, footer, date-time, page-number) and its notes master are not content. Masters no slide uses are not read.
 - **Speaker notes** (`presentation:notes`) are one `note` block of type `speaker` at the end of the slide.
 
 ## Flat files
@@ -134,6 +136,7 @@ Codes of this library:
 |---|---|
 | `odf.unread_content` | The document holds content this version does not read: an embedded formula or chart it could not read, a document held whole in a flat file, plug-ins, pictures over 64 MiB held in a flat file. The message counts them |
 | `odf.region_split` | An area of a sheet with thinly spread cells was written as one table per run of cells in a row |
+| `odf.formula_no_value` | Cells of a sheet hold formulas with no stored result (no value attribute, no text), so they show nothing; one warning per sheet with the count (info). The formulas stay in `Table.Cells` |
 | `odf.part_damaged` | A supporting stream (manifest, styles, metadata) could not be read to its end; what was read is used |
 | `odf.property_truncated` | A metadata value was cut at 64 KiB, or keywords or user-defined properties beyond 256 were left out |
 | `odf.control_characters_removed` | Control characters with no meaning as text were removed |
@@ -182,7 +185,7 @@ In every kind of document, `draw:object` and `draw:object-ole` in a frame are re
 
 ## Not read (yet)
 
-Drawings (`.odg`), charts, formulas and databases as documents in their own right; documents held whole inside a flat file's `draw:object`; change-tracked insertions are not marked in the text; master-page text of slides; the OpenOffice 1.x formats (`.sxw`).
+Drawings (`.odg`), charts, formulas and databases as documents in their own right; documents held whole inside a flat file's `draw:object`; change-tracked insertions are not marked in the text; the OpenOffice 1.x formats (`.sxw`).
 
 ## Provenance
 

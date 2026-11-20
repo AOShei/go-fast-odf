@@ -63,6 +63,11 @@ const (
 	// one table; each run of cells side by side in a row is a table of
 	// one row instead.
 	WarnRegionSplit = odt.WarnRegionSplit
+	// WarnFormulaNoValue: cells of a sheet hold formulas with no stored
+	// result (no value attribute and no text), so they show nothing; one
+	// warning per sheet gives the count. The formulas are in Table.Cells
+	// when Options.Cells is set.
+	WarnFormulaNoValue = odt.WarnFormulaNoValue
 	// WarnPartDamaged: a supporting stream (manifest, styles, metadata)
 	// could not be read to its end; what was read is used.
 	WarnPartDamaged = odt.WarnPartDamaged
