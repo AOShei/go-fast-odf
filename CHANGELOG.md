@@ -6,6 +6,17 @@ been released yet.
 
 ## [Unreleased]
 
+### Added: embedded documents in the command
+
+- Pins go-fast-core `787b056` (`RenderOptions.Children`).
+- `cmd/gofastodf` sets `Options.Child`: embedded objects and documents of
+  the OpenDocument media types this library reads are extracted with it,
+  bounded by core's depth limit; anything else is `ErrUnsupported` and
+  listed unread.
+- Flag `-children` (default true): in Markdown and text, embedded
+  documents follow, each after a line naming it; `-children=false` leaves
+  them out.
+
 ### Changed: declared, not judged (branch `declared-not-judged`)
 
 - Pins go-fast-core `05bbddb`, schema 0.2. Blocks, spans, table regions

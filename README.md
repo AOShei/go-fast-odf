@@ -26,11 +26,13 @@ The format is decided from the file (a package's `mimetype` member or manifest r
 ```
 gofastodf [flags] file-or-directory...
   -format json|markdown|text   -parts 2-5   -images meta|data|none
-  -spans  -cells  -furniture  -stored  -part-markers  -exclude-display[=reasons]
+  -spans  -cells  -furniture  -stored  -part-markers  -children  -exclude-display[=reasons]
   -max-cells N  -max-decoded-bytes N  -max-text-bytes N  -o file  -quiet
 ```
 
 Documents go to standard output; warnings of severity error go to standard error; the exit status is 1 if any input could not be read.
+
+The command reads embedded documents: an object whose media type is one of the OpenDocument formats this library reads (`application/vnd.oasis.opendocument.text`, `-spreadsheet`, `-presentation`, their templates, master and web variants and flat forms) is extracted with this library, as deep as core's `Limits.MaxDepth` (default 4) allows. Anything else (an OLE object, a drawing) is listed in `Children` with `child.unsupported` and not read.
 
 The render flags are the series' shared ones (`COMMAND_FLAGS.md` in the workspace) and affect Markdown and text only; JSON always has everything:
 
@@ -39,6 +41,7 @@ The render flags are the series' shared ones (`COMMAND_FLAGS.md` in the workspac
 | `-furniture` | include running headers and footers |
 | `-stored` | include the stored part (data the file keeps but shows nowhere: user fields, named ranges, form fields no page places) |
 | `-part-markers` | put a line before each part saying which part it is |
+| `-children` (default true) | include embedded documents, each after a line naming it (`[child 1: Object 1]`); `-children=false` leaves them out |
 | `-exclude-display[=reasons]` | leave out what the file declares not displayed: all of it (`-exclude-display`, `=true`, `=all`), or only those reasons (`=hidden`, `=no_ink`, `=hidden,no_ink`; comma or `+`); `=false` or `=` is off; any other value, `unknown` included, is an error |
 
 ## How a text document maps

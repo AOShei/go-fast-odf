@@ -2,7 +2,7 @@
 
 Module `github.com/AOShei/go-fast-odf`, package `gofastodf`. Extracts
 OpenDocument 1.0 to 1.3 files into the go-fast-core model (core pinned at
-commit 031432a). Standard library and go-fast modules only.
+commit 787b056). Standard library and go-fast modules only.
 
 Status legend: **done**, **partial**, **todo**.
 
@@ -72,6 +72,7 @@ execs/s per target.
 | Hidden flag as a signal (core 4de43b1) | done (run 4); superseded by run 6 |
 | Declared, not judged (core 05bbddb, schema 0.2): `Display` with `hidden` and `no_ink` from what the file declares only; low-contrast, tiny and outlier checks, `HiddenChecked`, the `text.hidden` and `text.unshown_outlier` warnings and the link-cache exemption removed; filtered rows and link-cache sheets reported `hidden`; command flag `-exclude-display`; R6 test | done (run 6) |
 | Follow-up decisions (2026-11-20): command flags as `COMMAND_FLAGS.md` (`-stored` added, help text aligned, `TestRenderFlags`); a placed form control whose `draw:control` declares `draw:display="none"` (or stands on such a layer) is `hidden` (`TestControlDisplay`), `form:hidden` and unplaced controls stay in the stored part; `CHANGELOG.md` started | done (run 7) |
+| Embedded documents in the command (core 787b056, `RenderOptions.Children`): `cmd/gofastodf` sets `Options.Child` to a dispatcher that hands the OpenDocument media types this library reads to its extractor and returns `ErrUnsupported` for the rest; core's `MaxDepth` bounds nesting; flag `-children` (default true); `TestChildren`, `TestChildrenFlag` | done (run 8) |
 | Unit tests inside internal packages; Table.Cells hrefs in text-document tables | todo |
 
 ### Phase 3: encryption and polish
