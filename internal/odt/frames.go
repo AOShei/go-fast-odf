@@ -40,6 +40,10 @@ var mimeByExt = map[string]string{
 func (r *reader) drawing(c ctxt, dst *[]gofastcore.Block) {
 	s := &r.s
 	c.breaks = false // a rule in a frame is part of its picture
+	// A shape not displayed, by its own attribute or its layer's.
+	if r.attr(ns.Draw, "display") == "none" || r.set.LayerHidden(r.attr(ns.Draw, "layer")) {
+		c.hidden |= gofastcore.HiddenInvisible
+	}
 	switch string(s.Local()) {
 	case "frame":
 		r.frame(c, dst)

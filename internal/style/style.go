@@ -194,20 +194,22 @@ type scope struct {
 
 // Set is the styles of one document.
 type Set struct {
-	common     scope
-	auto       [2]scope
-	defaults   map[string]*Style
-	outline    *ListStyle
-	masters    map[string]string // master page -> page layout
-	masterBG   map[string]string // master page -> its drawing-page style
-	first      string            // the first master page
-	layouts    map[string]Color  // page layout -> background
-	cache      map[cacheKey]Resolved
-	count      int
-	layoutName string // the page layout being read
-	Truncated  bool   // more styles than maxStyles; the rest were left out
-	Damaged    bool   // a stream's styles could not be read to their end
-	Scripts    int    // non-empty office:scripts or office:event-listeners met
+	common   scope
+	auto     [2]scope
+	defaults map[string]*Style
+	outline  *ListStyle
+	masters  map[string]string // master page -> page layout
+	masterBG map[string]string // master page -> its drawing-page style
+	// hiddenLayers are the drawing layers that are not displayed.
+	hiddenLayers map[string]bool
+	first        string           // the first master page
+	layouts      map[string]Color // page layout -> background
+	cache        map[cacheKey]Resolved
+	count        int
+	layoutName   string // the page layout being read
+	Truncated    bool   // more styles than maxStyles; the rest were left out
+	Damaged      bool   // a stream's styles could not be read to their end
+	Scripts      int    // non-empty office:scripts or office:event-listeners met
 }
 
 type cacheKey struct {
@@ -231,8 +233,10 @@ func New() *Set {
 		defaults: map[string]*Style{},
 		masters:  map[string]string{},
 		masterBG: map[string]string{},
-		layouts:  map[string]Color{},
-		cache:    map[cacheKey]Resolved{},
+
+		hiddenLayers: map[string]bool{},
+		layouts:      map[string]Color{},
+		cache:        map[cacheKey]Resolved{},
 	}
 }
 
@@ -369,6 +373,12 @@ func (set *Set) Read(s *xmlscan.Scanner, sc Scope) error {
 					set.first = name
 				}
 				s.Skip() // the content of a master page is read by the body reader
+			}
+		case ns.Draw:
+			if local == "layer" && len(set.hiddenLayers) < maxStyles {
+				if v, _ := s.Attr(ns.Draw, "display"); string(v) == "none" {
+					set.hiddenLayers[string(attr(s, ns.Draw, "name"))] = true
+				}
 			}
 		case ns.Text:
 			switch local {
@@ -747,6 +757,10 @@ func (set *Set) List(sc Scope, name string) *ListStyle {
 
 // Outline returns the outline numbering style, or nil.
 func (set *Set) Outline() *ListStyle { return set.outline }
+
+// LayerHidden reports whether the named drawing layer is not displayed
+// (draw:display="none" in the layer set).
+func (set *Set) LayerHidden(name string) bool { return name != "" && set.hiddenLayers[name] }
 
 // SlideBackground returns the background a master page of a presentation
 // gives its slides (the fill of its drawing-page style, in styles.xml),

@@ -6,6 +6,28 @@ import (
 	"github.com/AOShei/go-fast-core"
 )
 
+// A shape that is not displayed (draw:display="none", or on a layer that
+// is not) holds hidden text: invisible is listed as checked, so it must be
+// flagged.
+func TestHiddenShapesFlagged(t *testing.T) {
+	styles := stylesXML(``, ``, `<draw:layer-set><draw:layer draw:name="layout"/><draw:layer draw:name="secret" draw:display="none"/></draw:layer-set>`+
+		`<style:master-page style:name="Default"/>`)
+	slides := `<draw:page draw:name="p1">` +
+		`<draw:frame svg:x="1cm" svg:y="1cm" draw:layer="layout"><draw:text-box><text:p>Shown</text:p></draw:text-box></draw:frame>` +
+		`<draw:custom-shape svg:x="1cm" svg:y="3cm" draw:display="none"><text:p>Not displayed</text:p></draw:custom-shape>` +
+		`<draw:frame svg:x="1cm" svg:y="5cm" draw:layer="secret"><draw:text-box><text:p>On a hidden layer</text:p></draw:text-box></draw:frame>` +
+		`</draw:page>`
+	doc := extract(t, bodyDoc(t, slideMIME, "", `<office:presentation>`+slides+`</office:presentation>`, member{name: "styles.xml", data: styles}), nil)
+	check(t, doc.Parts[0].Blocks, `
+paragraph Shown
+paragraph{invisible} Not displayed
+paragraph{invisible} On a hidden layer`)
+	text := textDoc(t, "", `<text:p>Visible<draw:frame draw:display="none"><draw:text-box><text:p>Boxed away</text:p></draw:text-box></draw:frame></text:p>`)
+	check(t, body(t, extract(t, text, nil)), `
+paragraph Visible
+paragraph{invisible} Boxed away`)
+}
+
 // Ordinary presentations: light text on a dark background that the
 // master page gives, and on a slide whose background is a picture, is in
 // plain view. White text on a white master still is not.
