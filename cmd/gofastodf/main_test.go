@@ -60,7 +60,7 @@ func TestCommand(t *testing.T) {
 		t.Errorf("markdown %q", md)
 	}
 
-	for _, bad := range [][]string{{}, {"-format", "pdf", a}, {"-images", "all", a}, {"-parts", "3-1", a}, {"-exclude-hidden=nonsense", a}} {
+	for _, bad := range [][]string{{}, {"-format", "pdf", a}, {"-images", "all", a}, {"-parts", "3-1", a}, {"-exclude-display=nonsense", a}} {
 		if code := run(context.Background(), bad, &out, &errs); code != 2 {
 			t.Errorf("%v: exit %d", bad, code)
 		}

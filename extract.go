@@ -49,11 +49,10 @@ const (
 //	input.ambiguous           the archive names a member twice, in two
 //	                          ways, or has two members with one name
 //	text.tracked_changes      the document has tracked changes
-//	text.hidden               text a reader cannot see
-//	text.unshown_outlier      routine unshown data (a user field, a named
-//	                          range, a condition, a form value) out of
-//	                          proportion by gofastcore.UnshownOutlier
 //	structure.heading_level_clamped
+//
+// What the file declares about display is on the blocks, spans, table
+// regions and parts (gofastcore.Display), not in warnings.
 const (
 	// WarnUnreadContent: the document holds content of a kind this
 	// version does not read (embedded objects, form controls); the
@@ -255,7 +254,6 @@ func (e *Extractor) Extract(ctx context.Context, r io.ReaderAt, size int64, opts
 	}
 
 	doc := gofastcore.New("odt")
-	doc.HiddenChecked = odt.HiddenChecked
 	md := meta.Read(pkg)
 	doc.Metadata = md.Metadata
 	if pkg.Encrypted("meta.xml") {
@@ -288,9 +286,6 @@ func (e *Extractor) Extract(ctx context.Context, r io.ReaderAt, size int64, opts
 	}
 	if md.Removed > 0 {
 		warn(gofastcore.SeverityInfo, WarnControlCharsRemoved, fmt.Sprintf("%d in document properties", md.Removed))
-	}
-	if hiddenInMetadata(&doc.Metadata) {
-		warn(gofastcore.SeverityWarning, gofastcore.WarnTextHidden, "document properties contain invisible characters")
 	}
 	external := 0
 	if md.Refresh != "" {
@@ -422,32 +417,4 @@ func wrap(err error) error {
 		shared = gofastcore.ErrPasswordRequired
 	}
 	return fmt.Errorf("gofastodf: %s: %w", clean.Label(err.Error()), shared)
-}
-
-// hiddenInMetadata reports whether any property value holds invisible
-// characters. Properties cannot carry a block flag, so the finding becomes
-// a document-level warning.
-func hiddenInMetadata(m *gofastcore.Metadata) bool {
-	found := func(s string) bool { return gofastcore.InvisibleChars(s) != nil }
-	if found(m.Title) || found(m.Subject) || found(m.Language) || found(m.Application) {
-		return true
-	}
-	for _, s := range m.Authors {
-		if found(s) {
-			return true
-		}
-	}
-	for _, s := range m.Keywords {
-		if found(s) {
-			return true
-		}
-	}
-	// Every entry is looked at, with no early return, so that the work
-	// done does not depend on the map's order.
-	any := false
-	for k, v := range m.Extra {
-		any = found(k) || any
-		any = found(v) || any
-	}
-	return any
 }

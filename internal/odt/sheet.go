@@ -10,7 +10,6 @@ import (
 	"github.com/AOShei/go-fast-core"
 	"github.com/AOShei/go-fast-odf/internal/clean"
 	"github.com/AOShei/go-fast-odf/internal/ns"
-	"github.com/AOShei/go-fast-odf/internal/style"
 	"github.com/AOShei/go-fast-odf/internal/xmlscan"
 )
 
@@ -36,7 +35,7 @@ type sheetCell struct {
 	row, col   int32
 	rows, cols int32 // spans, at least 1
 	text       string
-	hidden     gofastcore.Hidden
+	hidden     gofastcore.Display
 	more       *cellMore
 }
 
@@ -53,7 +52,7 @@ type cellMore struct {
 // run is a stretch of rows or columns, from and to inclusive.
 type span struct {
 	from, to int
-	hidden   gofastcore.Hidden
+	hidden   gofastcore.Display
 	style    string // default cell style, for columns
 }
 
@@ -105,7 +104,7 @@ func (r *reader) spreadsheet(serr error) []gofastcore.Part {
 			if !r.opts.Parts.Contains(n) {
 				s.Skip()
 				p := gofastcore.Part{Kind: gofastcore.PartSheet, Number: n}
-				p.MarkHidden()
+				p.Finish()
 				parts = append(parts, p)
 				continue
 			}
@@ -257,7 +256,6 @@ func (r *reader) namedRanges(sheet string) {
 		if string(s.Local()) == "database-range" {
 			b.Attrs["kind"] = "database_range"
 		}
-		r.unshown(&b, true)
 		if !r.emit(&r.userVars, b) {
 			return
 		}
@@ -268,8 +266,11 @@ func (r *reader) namedRanges(sheet string) {
 func (r *reader) sheet(n int) gofastcore.Part {
 	name := clean.Name(r.attr(ns.Table, "name"))
 	part := gofastcore.Part{Kind: gofastcore.PartSheet, Number: n, Name: name}
-	if r.set.Box(r.sc, "table", r.attr(ns.Table, "style-name")).BoxHidden && !linkCache(name) {
-		part.Hidden = gofastcore.HiddenInvisible
+	// table:display="false", declared through the table's style. This
+	// includes LibreOffice's copies of sheets of other files that
+	// formulas refer to: the file declares them hidden.
+	if r.set.Box(r.sc, "table", r.attr(ns.Table, "style-name")).BoxHidden {
+		part.Display = gofastcore.DisplayHidden
 	}
 	sh := &sheetIn{choices: map[string]*[4]int{}}
 	row := 0
@@ -280,14 +281,6 @@ func (r *reader) sheet(n int) gofastcore.Part {
 	}
 	r.finish(&part, "sheet")
 	return part
-}
-
-// linkCache reports whether a sheet is LibreOffice's copy of a sheet of
-// another file that formulas refer to: named 'address'#Sheet, and kept
-// hidden by design. It is routine data the file keeps and never shows,
-// not hiding, so it is not flagged.
-func linkCache(name string) bool {
-	return strings.HasPrefix(name, "'") && strings.Contains(name, "'#")
 }
 
 // sheetBody reads the children of a table or of a group of rows or
@@ -327,7 +320,7 @@ func (r *reader) sheetBody(sh *sheetIn, row *int, sheetName string) {
 			r.external++
 			s.Skip()
 		case space == ns.Table && local == "shapes":
-			r.blocks(ctxt{bg: style.White}, &sh.extra)
+			r.blocks(ctxt{}, &sh.extra)
 		case space == ns.Office && local == "forms":
 			r.readForms()
 		default:
@@ -406,12 +399,8 @@ func (r *reader) sheetRow(sh *sheetIn, row *int) {
 		formula := r.attr(ns.Table, "formula")
 		value := cellValue(r, vt)
 		cs := r.set.Box(r.sc, "table-cell", styleName)
-		bg := cs.Background
-		if !bg.Known() {
-			bg = style.White
-		}
 		var content []gofastcore.Block
-		r.blocks(ctxt{bg: bg}, &content)
+		r.blocks(ctxt{}, &content)
 		text, spans, hid, rest := r.flatten(content)
 		if vt == "date" || vt == "time" {
 			// A date or time stored as a value is written in ISO 8601,
@@ -427,7 +416,8 @@ func (r *reader) sheetRow(sh *sheetIn, row *int) {
 			}
 		}
 		if text != "" {
-			hid |= reasons(&run{eff: cs, bg: bg})
+			// What the cell's style declares (text:display, no ink).
+			hid |= reasons(&run{eff: cs})
 		}
 		c.text, c.hidden = text, hid
 		var more cellMore
@@ -736,12 +726,12 @@ func (r *reader) sheetTable(sh *sheetIn, reg region, out *[]gofastcore.Block) bo
 	for i := range t.Rows {
 		t.Rows[i] = make([]string, w)
 	}
-	var all gofastcore.Hidden
+	var all gofastcore.Display
 	for _, c := range reg.cells {
 		i, j := int(c.row)-reg.r0, int(c.col)-reg.c0
 		t.Rows[i][j] = c.text
 		if c.hidden != 0 {
-			t.Hidden = append(t.Hidden, gofastcore.HiddenCells{Row: i, Col: j, RowSpan: 1, ColSpan: 1, Hidden: c.hidden})
+			t.Display = append(t.Display, gofastcore.DisplayCells{Row: i, Col: j, RowSpan: 1, ColSpan: 1, Display: c.hidden})
 			all |= c.hidden
 		}
 		if rs, cs := min(int(c.rows), h-i), min(int(c.cols), w-j); rs*cs > 1 {
@@ -754,17 +744,17 @@ func (r *reader) sheetTable(sh *sheetIn, reg region, out *[]gofastcore.Block) bo
 	t.Merges = noOverlap(t.Merges, h, w)
 	for _, rs := range sh.rows {
 		if a, b := max(rs.from, reg.r0), min(rs.to, reg.r1); a <= b {
-			t.Hidden = append(t.Hidden, gofastcore.HiddenCells{Row: a - reg.r0, Col: 0, RowSpan: b - a + 1, ColSpan: w, Hidden: rs.hidden})
+			t.Display = append(t.Display, gofastcore.DisplayCells{Row: a - reg.r0, Col: 0, RowSpan: b - a + 1, ColSpan: w, Display: rs.hidden})
 			all |= rs.hidden
 		}
 	}
 	for _, cs := range sh.cols {
 		if a, b := max(cs.from, reg.c0), min(cs.to, reg.c1); a <= b && cs.hidden != 0 {
-			t.Hidden = append(t.Hidden, gofastcore.HiddenCells{Row: 0, Col: a - reg.c0, RowSpan: h, ColSpan: b - a + 1, Hidden: cs.hidden})
+			t.Display = append(t.Display, gofastcore.DisplayCells{Row: 0, Col: a - reg.c0, RowSpan: h, ColSpan: b - a + 1, Display: cs.hidden})
 			all |= cs.hidden
 		}
 	}
-	*out = append(*out, gofastcore.Block{Kind: gofastcore.KindTable, Origin: gofastcore.OriginInferred, Table: t, Hidden: all,
+	*out = append(*out, gofastcore.Block{Kind: gofastcore.KindTable, Origin: gofastcore.OriginInferred, Table: t, Display: all,
 		Loc: gofastcore.Location{Range: rangeRef(reg.r0, reg.c0, reg.r1, reg.c1)}})
 	return true
 }

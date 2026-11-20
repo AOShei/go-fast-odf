@@ -23,18 +23,18 @@ type deletion struct {
 // hidden reasons. Blocks that are not text (pictures, notes inside them)
 // are returned as rest. What emit charged for the joined blocks is given
 // back: the text is charged again with the block it becomes.
-func (r *reader) flatten(blocks []gofastcore.Block) (text string, spans []gofastcore.Span, all gofastcore.Hidden, rest []gofastcore.Block) {
+func (r *reader) flatten(blocks []gofastcore.Block) (text string, spans []gofastcore.Span, all gofastcore.Display, rest []gofastcore.Block) {
 	var buf []byte
 	var collected []gofastcore.Span
 	for i := range blocks {
 		b := &blocks[i]
 		var line string
 		var lineSpans []gofastcore.Span
-		var lineWhole gofastcore.Hidden
+		var lineWhole gofastcore.Display
 		switch {
 		case b.Table != nil:
 			line = tableText(b.Table)
-			lineWhole = b.Hidden
+			lineWhole = b.Display
 		case b.Image != nil, b.Kind == gofastcore.KindNote, b.Kind == gofastcore.KindFootnote:
 			rest = append(rest, *b)
 			continue
@@ -42,7 +42,7 @@ func (r *reader) flatten(blocks []gofastcore.Block) (text string, spans []gofast
 			r.budget.Return(cost(b))
 			line = b.Text
 			lineSpans = b.Spans
-			lineWhole = b.HiddenWhole()
+			lineWhole = b.DisplayWhole()
 			if b.Marker != "" {
 				prefix := b.Marker + " "
 				line = prefix + line
@@ -68,7 +68,7 @@ func (r *reader) flatten(blocks []gofastcore.Block) (text string, spans []gofast
 		at := off
 		gap := func(end int) {
 			if lineWhole != 0 && end > at {
-				collected = append(collected, gofastcore.Span{Start: at, End: end, Hidden: lineWhole})
+				collected = append(collected, gofastcore.Span{Start: at, End: end, Display: lineWhole})
 			}
 		}
 		sortSpans(lineSpans)
@@ -79,7 +79,7 @@ func (r *reader) flatten(blocks []gofastcore.Block) (text string, spans []gofast
 				continue
 			}
 			gap(sp.Start)
-			sp.Hidden |= lineWhole
+			sp.Display |= lineWhole
 			collected = append(collected, sp)
 			at = sp.End
 		}
@@ -134,7 +134,7 @@ func (r *reader) note(p *para, ru run) {
 			marker, _ = clean.String([]byte(label), clean.Prose)
 			marker = clean.Label(marker)
 		case "note-body":
-			r.blocks(ctxt{bg: ru.bg, hidden: reasons(&ru) & gofastcore.HiddenInvisible}, &body)
+			r.blocks(ctxt{hidden: reasons(&ru) & gofastcore.DisplayHidden}, &body)
 		}
 	}
 	text, spans, all, rest := r.flatten(body)
@@ -143,7 +143,7 @@ func (r *reader) note(p *para, ru run) {
 		dst = &r.endnotes
 	}
 	if text != "" {
-		b := gofastcore.Block{Kind: gofastcore.KindFootnote, Marker: marker, Text: text, Spans: spans, Hidden: all}
+		b := gofastcore.Block{Kind: gofastcore.KindFootnote, Marker: marker, Text: text, Spans: spans, Display: all}
 		if !r.emit(dst, b) {
 			return
 		}
@@ -189,7 +189,7 @@ func (r *reader) annotation(c ctxt, dst *[]gofastcore.Block) {
 		if date != "" {
 			attrs[gofastcore.AttrDate] = date
 		}
-		b := gofastcore.Block{Kind: gofastcore.KindNote, Text: text, Spans: spans, Hidden: all, Attrs: attrs}
+		b := gofastcore.Block{Kind: gofastcore.KindNote, Text: text, Spans: spans, Display: all, Attrs: attrs}
 		whole(&b, c.hidden)
 		if !r.emit(dst, b) {
 			return
@@ -285,7 +285,7 @@ func (r *reader) useDeletion(id string, dst *[]gofastcore.Block) {
 		if d.date != "" {
 			attrs[gofastcore.AttrDate] = d.date
 		}
-		b := gofastcore.Block{Kind: gofastcore.KindNote, Text: text, Spans: spans, Hidden: all, Attrs: attrs}
+		b := gofastcore.Block{Kind: gofastcore.KindNote, Text: text, Spans: spans, Display: all, Attrs: attrs}
 		if !r.emit(dst, b) {
 			return
 		}

@@ -162,19 +162,19 @@ func (t *tally) add(format string, r corpusResult) {
 	if r.doc == nil {
 		return
 	}
-	var inFile gofastcore.Hidden
+	var inFile gofastcore.Display
 	for _, b := range r.doc.AllBlocks() {
-		if b.Hidden == 0 {
+		if b.Display == 0 {
 			continue
 		}
-		inFile |= b.Hidden
-		for bit := gofastcore.Hidden(1); bit != 0; bit <<= 1 {
-			if b.Hidden&bit != 0 {
+		inFile |= b.Display
+		for bit := gofastcore.Display(1); bit != 0; bit <<= 1 {
+			if b.Display&bit != 0 {
 				t.reasons[bit.String()]++
 			}
 		}
 	}
-	for bit := gofastcore.Hidden(1); bit != 0; bit <<= 1 {
+	for bit := gofastcore.Display(1); bit != 0; bit <<= 1 {
 		if inFile&bit != 0 {
 			t.filesWith[bit.String()]++
 		}
@@ -208,13 +208,13 @@ func (t *tally) String() string {
 
 func logFlags(t *testing.T, name string, doc *gofastcore.Document) {
 	for part, b := range doc.AllBlocks() {
-		if b.Hidden == 0 {
+		if b.Display == 0 {
 			continue
 		}
 		text := b.Text
 		if len(b.Spans) > 0 {
 			for _, sp := range b.Spans {
-				if sp.Hidden != 0 {
+				if sp.Display != 0 {
 					text = b.Text[sp.Start:sp.End]
 					break
 				}
@@ -229,14 +229,14 @@ func logFlags(t *testing.T, name string, doc *gofastcore.Document) {
 		}
 		where := ""
 		switch {
-		case part.Hidden != 0:
+		case part.Display != 0:
 			where = " (part " + part.Name + " hidden)"
 		case b.Table != nil:
-			for _, h := range b.Table.Hidden {
+			for _, h := range b.Table.Display {
 				where += fmt.Sprintf(" [r%d c%d %dx%d]", h.Row, h.Col, h.RowSpan, h.ColSpan)
 			}
 		}
-		t.Logf("FLAG %s part %d %s %s%s: %q", name, part.Number, b.Kind, b.Hidden, where, string(r))
+		t.Logf("FLAG %s part %d %s %s%s: %q", name, part.Number, b.Kind, b.Display, where, string(r))
 	}
 }
 

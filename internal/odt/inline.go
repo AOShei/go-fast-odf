@@ -7,7 +7,7 @@ import (
 
 	"github.com/AOShei/go-fast-core"
 	"github.com/AOShei/go-fast-odf/internal/clean"
-	"github.com/AOShei/go-fast-odf/internal/hidden"
+	"github.com/AOShei/go-fast-odf/internal/display"
 	"github.com/AOShei/go-fast-odf/internal/ns"
 	"github.com/AOShei/go-fast-odf/internal/style"
 	"github.com/AOShei/go-fast-odf/internal/xmlscan"
@@ -16,7 +16,7 @@ import (
 var (
 	decodeRune     = utf8.DecodeRune
 	decodeLastRune = utf8.DecodeLastRune
-	settle         = hidden.Settle
+	settle         = display.Settle
 )
 
 // maxSpaces bounds what one text:s may ask for.
@@ -26,39 +26,17 @@ const maxSpaces = 1 << 16
 // room left costs no allocation.
 var spaceRun = strings.Repeat(" ", maxSpaces)
 
-// reasons says why text with the given formatting cannot be seen.
-func reasons(ru *run) gofastcore.Hidden {
+// reasons gives what the file declares about the display of text with
+// the given formatting: text:display="none" (hidden), a definite colour
+// with loext:opacity of 0 (no ink), and what a field or container
+// declares (ru.hidden).
+func reasons(ru *run) gofastcore.Display {
 	h := ru.hidden
-	e := &ru.eff
-	if e.Hidden {
-		h |= gofastcore.HiddenInvisible
+	if ru.eff.DisplayNone {
+		h |= gofastcore.DisplayHidden
 	}
-	if e.Transparent {
-		h |= gofastcore.HiddenTransparent
-	}
-	size := e.Size
-	if size <= 0 {
-		size = style.DefaultSize
-	}
-	if e.Scale > 0 && e.Scale < 100 {
-		size = size * e.Scale / 100
-	}
-	if size < gofastcore.HiddenTinySize {
-		h |= gofastcore.HiddenTiny
-	}
-	// Text on a picture, a gradient or a hatch is not compared: no one
-	// colour stands behind it.
-	if e.Color.Known() && !(ru.bg.Varied && !e.Highlight.Known()) {
-		behind := ru.bg
-		if e.Highlight.Known() {
-			behind = e.Highlight
-		}
-		if !behind.Known() {
-			behind = style.White
-		}
-		if gofastcore.LowContrast(e.Color.R, e.Color.G, e.Color.B, behind.R, behind.G, behind.B) {
-			h |= gofastcore.HiddenLowContrast
-		}
+	if ru.eff.NoInk {
+		h |= gofastcore.DisplayNoInk
 	}
 	return h
 }
@@ -107,16 +85,16 @@ func (r *reader) mark(p *para, ru *run, start int) {
 	if end <= start {
 		return
 	}
-	sp := gofastcore.Span{Start: start, End: end, Hidden: reasons(ru)}
+	sp := gofastcore.Span{Start: start, End: end, Display: reasons(ru)}
 	if r.opts.Spans {
 		sp.Style, sp.Href = ru.inline, ru.href
 	}
-	if sp.Hidden == 0 && sp.Style == 0 && sp.Href == "" {
+	if sp.Display == 0 && sp.Style == 0 && sp.Href == "" {
 		return
 	}
 	if n := len(p.spans); n > 0 {
 		last := &p.spans[n-1]
-		if last.End == start && last.Hidden == sp.Hidden && last.Style == sp.Style && last.Href == sp.Href {
+		if last.End == start && last.Display == sp.Display && last.Style == sp.Style && last.Href == sp.Href {
 			last.End = end
 			return
 		}
@@ -193,11 +171,11 @@ func (r *reader) inline(p *para, ru run, depth int) {
 		case ns.Text:
 			r.inlineText(p, ru, local)
 		case ns.Draw:
-			r.drawing(ctxt{bg: ru.bg, hidden: reasons(&ru) & gofastcore.HiddenInvisible}, &p.after)
+			r.drawing(ctxt{hidden: reasons(&ru) & gofastcore.DisplayHidden}, &p.after)
 		case ns.Office:
 			switch local {
 			case "annotation":
-				r.annotation(ctxt{bg: ru.bg}, &p.after)
+				r.annotation(ctxt{}, &p.after)
 			case "annotation-end":
 				s.Skip()
 			case "event-listeners":
@@ -266,14 +244,14 @@ func (r *reader) inlineText(p *para, ru run, local string) {
 		r.useDeletion(r.attr(ns.Text, "change-id"), &p.after)
 		s.Skip()
 	case "hidden-paragraph":
-		if hiddenNow(r.attr(ns.Text, "is-hidden"), r.attr(ns.Text, "condition")) {
-			p.hidden |= gofastcore.HiddenInvisible
+		if recordedHidden(r.attr(ns.Text, "is-hidden")) {
+			p.hidden |= gofastcore.DisplayHidden
 		}
 		s.Skip()
 	case "hidden-text":
 		inner := ru
-		if hiddenNow(r.attr(ns.Text, "is-hidden"), r.attr(ns.Text, "condition")) {
-			inner.hidden |= gofastcore.HiddenInvisible
+		if recordedHidden(r.attr(ns.Text, "is-hidden")) {
+			inner.hidden |= gofastcore.DisplayHidden
 		}
 		start := len(p.buf)
 		r.inline(p, inner, s.Depth())
@@ -289,7 +267,7 @@ func (r *reader) inlineText(p *para, ru run, local string) {
 		"expression", "sequence", "user-defined":
 		inner := ru
 		if r.attr(ns.Text, "display") == "none" {
-			inner.hidden |= gofastcore.HiddenInvisible
+			inner.hidden |= gofastcore.DisplayHidden
 		}
 		r.inline(p, inner, s.Depth())
 	case "drop-down":
@@ -331,23 +309,10 @@ func isMacro(href string) bool {
 	return strings.HasPrefix(h, "vnd.sun.star.script:") || strings.HasPrefix(h, "macro:") || strings.HasPrefix(h, "javascript:")
 }
 
-// hiddenNow decides whether a conditionally hidden paragraph or text is
-// hidden. text:is-hidden records what the producer last computed; a
-// condition that is a literal truth is taken at its word as well.
-func hiddenNow(isHidden, condition string) bool {
-	if isHidden == "true" {
-		return true
-	}
-	c := strings.TrimSpace(condition)
-	if i := strings.IndexByte(c, ':'); i >= 0 && i < 8 {
-		c = strings.TrimSpace(c[i+1:]) // a namespace prefix: ooow:, oooc:
-	}
-	switch strings.ToLower(c) {
-	case "true", "1":
-		return true
-	}
-	return false
-}
+// recordedHidden reads text:is-hidden of a conditionally hidden paragraph
+// or text: what the file records as hidden. The condition itself is never
+// evaluated.
+func recordedHidden(isHidden string) bool { return isHidden == "true" }
 
 // conditional reads text:conditional-text: its content is what is shown;
 // the value for the other outcome of its condition is kept in a note.
@@ -360,10 +325,9 @@ func (r *reader) conditional(p *para, ru run) {
 		return
 	}
 	text := "IF " + cond + " THEN \"" + ifTrue + "\" ELSE \"" + ifFalse + "\""
-	// A field's instruction: routine, not flagged unless an outlier.
+	// The field's instruction, with no reason.
 	b := gofastcore.Block{Kind: gofastcore.KindNote, Text: strings.TrimSpace(text),
 		Attrs: map[string]string{gofastcore.AttrNoteType: gofastcore.NoteField, gofastcore.AttrField: "conditional-text"}}
-	r.unshown(&b, false)
 	r.emit(&p.after, b)
 }
 

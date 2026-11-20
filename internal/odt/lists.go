@@ -226,7 +226,7 @@ func (r *reader) list(c ctxt, dst *[]gofastcore.Block) {
 			continue
 		}
 		if s.Space() != ns.Text {
-			r.blockAt(ctxt{hidden: c.hidden, bg: c.bg, list: l}, dst)
+			r.blockAt(ctxt{hidden: c.hidden, list: l}, dst)
 			continue
 		}
 		switch string(s.Local()) {
@@ -239,7 +239,7 @@ func (r *reader) list(c ctxt, dst *[]gofastcore.Block) {
 		case "list-header":
 			r.item(c, l, nil, dst)
 		default:
-			r.blockAt(ctxt{hidden: c.hidden, bg: c.bg, list: l}, dst)
+			r.blockAt(ctxt{hidden: c.hidden, list: l}, dst)
 		}
 	}
 }
@@ -248,7 +248,7 @@ func (r *reader) list(c ctxt, dst *[]gofastcore.Block) {
 // label).
 func (r *reader) item(c ctxt, l *listCtx, it *itemCtx, dst *[]gofastcore.Block) {
 	s := &r.s
-	inner := ctxt{hidden: c.hidden, bg: c.bg, list: l}
+	inner := ctxt{hidden: c.hidden, list: l}
 	first := true
 	var given string // a text:number the item carries
 	depth := s.Depth()

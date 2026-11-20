@@ -33,7 +33,7 @@ func (r *reader) presentation(serr error) []gofastcore.Part {
 			if !r.opts.Parts.Contains(n) {
 				s.Skip()
 				p := gofastcore.Part{Kind: gofastcore.PartSlide, Number: n}
-				p.MarkHidden()
+				p.Finish()
 				parts = append(parts, p)
 				continue
 			}
@@ -69,17 +69,9 @@ func (r *reader) slide(n int) gofastcore.Part {
 	name := clean.Name(r.attr(ns.Draw, "name"))
 	page := r.set.Box(r.sc, "drawing-page", r.attr(ns.Draw, "style-name"))
 	if page.BoxHidden {
-		part.Hidden = gofastcore.HiddenInvisible
+		part.Display = gofastcore.DisplayHidden
 	}
-	bg := page.Background
-	if !bg.Known() {
-		// Most slides show the background of their master page.
-		bg = r.set.SlideBackground(r.attr(ns.Draw, "master-page-name"))
-	}
-	if !bg.Known() {
-		bg = style.White
-	}
-	c := ctxt{bg: bg}
+	c := ctxt{}
 	var items []item
 	var notes []gofastcore.Block
 	lastX, lastY := 0.0, 0.0
@@ -96,10 +88,10 @@ func (r *reader) slide(n int) gofastcore.Part {
 		switch {
 		case space == ns.Presentation && local == "notes":
 			var nb []gofastcore.Block
-			r.blocks(ctxt{bg: style.White}, &nb)
+			r.blocks(ctxt{}, &nb)
 			text, spans, hid, rest := r.flatten(nb)
 			if text != "" {
-				r.emit(&notes, gofastcore.Block{Kind: gofastcore.KindNote, Text: text, Spans: spans, Hidden: hid,
+				r.emit(&notes, gofastcore.Block{Kind: gofastcore.KindNote, Text: text, Spans: spans, Display: hid,
 					Attrs: map[string]string{gofastcore.AttrNoteType: gofastcore.NoteSpeaker}})
 			}
 			notes = append(notes, rest...)
@@ -114,13 +106,7 @@ func (r *reader) slide(n int) gofastcore.Part {
 			lastX, lastY = it.x, it.y
 			class := r.attr(ns.Presentation, "class")
 			it.title = class == "title"
-			ic := c
-			if ps := r.attr(ns.Presentation, "style-name"); ps != "" {
-				if b := r.set.Box(r.sc, "presentation", ps).Background; b.Known() {
-					ic.bg = b
-				}
-			}
-			r.drawing(ic, &it.blocks)
+			r.drawing(c, &it.blocks)
 			for i := range it.blocks {
 				b := &it.blocks[i]
 				if b.Table != nil || b.Image != nil || b.Kind == gofastcore.KindNote || b.Kind == gofastcore.KindFootnote {

@@ -1,8 +1,9 @@
 // Package style reads the styles of an OpenDocument file (styles.xml and
 // the automatic styles of each stream) as far as the extractor needs them:
-// outline levels, list styles, and the text formatting that decides
-// whether text can be seen (display, colour, background, size) or is
-// emphasised (weight, slant, lines, position).
+// outline levels, list styles, paragraph borders, what the file declares
+// about display (text:display="none", a font colour with no opacity,
+// hidden sheets, slides and layers), and emphasis (weight, slant, lines,
+// position). Colours are not compared and sizes not judged.
 //
 // A style inherits from its parent (style:parent-style-name) and, at the
 // root, from the default style of its family. Lookups walk that chain,
@@ -18,22 +19,16 @@ import (
 	"github.com/AOShei/go-fast-odf/internal/xmlscan"
 )
 
-// Color is a colour as a style gives it.
+// Color is a font colour as a style gives it. Only whether it is a
+// definite colour matters: loext:opacity is read beside one.
 type Color struct {
 	Set  bool // the style says something
-	None bool // transparent, or no fill: whatever is behind shows
+	None bool // transparent
 	Auto bool // the program chooses (window font colour)
-	// Varied: an opaque fill that is not one colour (a picture, a
-	// gradient, a hatch). Text on it is not compared with it.
-	Varied  bool
-	R, G, B uint8
 }
 
 // Known reports whether the colour is a definite one.
 func (c Color) Known() bool { return c.Set && !c.None && !c.Auto }
-
-// White is the colour of paper.
-var White = Color{Set: true, R: 255, G: 255, B: 255}
 
 // Tri is a property that may be unset, on or off.
 type Tri int8
@@ -50,11 +45,7 @@ func (t Tri) on() bool { return t == On }
 type textProps struct {
 	display   Tri // Off: text:display="none"
 	color     Color
-	highlight Color
-	size      float64 // points, if > 0
-	sizePct   float64 // percent of the inherited size, if > 0
-	scale     float64 // percent width, if > 0
-	opacity   float64 // percent, if >= 0 and opacitySet
+	opacity   float64 // percent, if opSet
 	opSet     bool
 	bold      Tri
 	italic    Tri
@@ -65,17 +56,16 @@ type textProps struct {
 
 // Style is one style as written.
 type Style struct {
-	family     string
-	parent     string
-	text       textProps
-	background Color // fo:background-color or a solid fill of the style's own box
-	outline    int   // -1: not set
-	listStyle  string
-	hasList    bool
-	master     string
-	boxHidden  Tri // On: the sheet or slide is hidden
-	name       string
-	border     [4]string // top, bottom, left, right as written; "" unset
+	family    string
+	parent    string
+	text      textProps
+	outline   int // -1: not set
+	listStyle string
+	hasList   bool
+	master    string
+	boxHidden Tri // On: the sheet or slide is hidden
+	name      string
+	border    [4]string // top, bottom, left, right as written; "" unset
 }
 
 // Sides of a paragraph's border, as indexes of Resolved.Border.
@@ -114,20 +104,12 @@ func borderValue(v []byte) string {
 
 // Resolved is a style with everything it inherits applied.
 type Resolved struct {
-	// Hidden: the text is not displayed (text:display="none").
-	Hidden bool
-	// Color is the text colour; Highlight is the background of the
-	// characters themselves.
-	Color, Highlight Color
-	// Background is the background of the style's own box: a paragraph's
-	// shading, a cell's or a section's fill.
-	Background Color
-	// Size is the font size in points; 0 if no style says.
-	Size float64
-	// Scale is the width of the characters in percent; 0 if no style says.
-	Scale float64
-	// Transparent: the characters are drawn with full transparency.
-	Transparent bool
+	// DisplayNone: the file declares the text not displayed
+	// (text:display="none").
+	DisplayNone bool
+	// NoInk: the file declares the text's definite colour fully
+	// transparent (loext:opacity="0%").
+	NoInk bool
 
 	Bold, Italic, Underline, Strike, Super, Sub bool
 
@@ -198,18 +180,13 @@ type Set struct {
 	auto     [2]scope
 	defaults map[string]*Style
 	outline  *ListStyle
-	masters  map[string]string // master page -> page layout
-	masterBG map[string]string // master page -> its drawing-page style
 	// hiddenLayers are the drawing layers that are not displayed.
 	hiddenLayers map[string]bool
-	first        string           // the first master page
-	layouts      map[string]Color // page layout -> background
 	cache        map[cacheKey]Resolved
 	count        int
-	layoutName   string // the page layout being read
-	Truncated    bool   // more styles than maxStyles; the rest were left out
-	Damaged      bool   // a stream's styles could not be read to their end
-	Scripts      int    // non-empty office:scripts or office:event-listeners met
+	Truncated    bool // more styles than maxStyles; the rest were left out
+	Damaged      bool // a stream's styles could not be read to their end
+	Scripts      int  // non-empty office:scripts or office:event-listeners met
 }
 
 type cacheKey struct {
@@ -231,11 +208,8 @@ func New() *Set {
 		common:   scope{styles: map[key]*Style{}, lists: map[string]*ListStyle{}},
 		auto:     [2]scope{{styles: map[key]*Style{}, lists: map[string]*ListStyle{}}, {styles: map[key]*Style{}, lists: map[string]*ListStyle{}}},
 		defaults: map[string]*Style{},
-		masters:  map[string]string{},
-		masterBG: map[string]string{},
 
 		hiddenLayers: map[string]bool{},
-		layouts:      map[string]Color{},
 		cache:        map[cacheKey]Resolved{},
 	}
 }
@@ -273,7 +247,7 @@ func (set *Set) Read(s *xmlscan.Scanner, sc Scope) error {
 		}
 		if k == xmlscan.End {
 			switch {
-			case s.Space() == ns.Style && (string(s.Local()) == "style" || string(s.Local()) == "default-style" || string(s.Local()) == "page-layout"):
+			case s.Space() == ns.Style && (string(s.Local()) == "style" || string(s.Local()) == "default-style"):
 				cur = nil
 			case s.Space() == ns.Text && (string(s.Local()) == "list-style" || string(s.Local()) == "outline-style"):
 				list = nil
@@ -328,24 +302,14 @@ func (set *Set) Read(s *xmlscan.Scanner, sc Scope) error {
 					where.styles[key{family, string(attr(s, ns.Style, "name"))}] = st
 				}
 				cur = st
-			case "page-layout":
-				st := &Style{family: "page-layout", outline: -1}
-				set.layoutName = string(attr(s, ns.Style, "name"))
-				cur = st
 			case "text-properties":
 				if cur != nil {
 					readText(s, &cur.text)
 				}
-			case "paragraph-properties", "table-cell-properties", "section-properties", "graphic-properties", "page-layout-properties", "table-properties", "drawing-page-properties":
+			case "paragraph-properties", "table-properties", "drawing-page-properties":
 				if cur != nil {
 					if local == "paragraph-properties" {
 						readBorders(s, cur)
-					}
-					if bg := background(s); bg.Set {
-						cur.background = bg
-						if cur.family == "page-layout" {
-							set.layouts[set.layoutName] = bg
-						}
 					}
 					// A hidden sheet, a hidden slide.
 					if v, ok := s.Attr(ns.Table, "display"); ok && local == "table-properties" {
@@ -362,16 +326,6 @@ func (set *Set) Read(s *xmlscan.Scanner, sc Scope) error {
 					}
 				}
 			case "master-page":
-				name := string(attr(s, ns.Style, "name"))
-				if len(set.masters) < maxStyles {
-					set.masters[name] = string(attr(s, ns.Style, "page-layout-name"))
-					if dp := attr(s, ns.Draw, "style-name"); len(dp) > 0 {
-						set.masterBG[name] = string(dp)
-					}
-				}
-				if set.first == "" {
-					set.first = name
-				}
 				s.Skip() // the content of a master page is read by the body reader
 			}
 		case ns.Draw:
@@ -466,26 +420,11 @@ func readText(s *xmlscan.Scanner, t *textProps) {
 	if v, ok := s.Attr(ns.Style, "use-window-font-color"); ok && string(v) == "true" {
 		t.color = Color{Set: true, Auto: true}
 	}
-	if v, ok := s.Attr(ns.FO, "background-color"); ok {
-		t.highlight = ParseColor(string(v))
-	}
-	if v, ok := s.Attr(ns.FO, "font-size"); ok {
-		t.size, t.sizePct = 0, 0
-		if p, ok := percent(string(v)); ok {
-			t.sizePct = p
-		} else if pt, ok := Length(string(v)); ok {
-			t.size = pt
-		}
-	}
-	if v, ok := s.Attr(ns.Style, "text-scale"); ok {
-		if p, ok := percent(string(v)); ok {
-			t.scale = p
-		}
-	}
-	// loext:opacity is the alpha of the font colour. LibreOffice writes
-	// "0%" beside the automatic colour (use-window-font-color), whose
-	// alpha means nothing; it is taken only with a definite colour, and a
-	// definite colour given without it is opaque.
+	// loext:opacity is the alpha of the font colour: "0%" declares the
+	// text drawn with no ink. LibreOffice writes "0%" beside the automatic
+	// colour (use-window-font-color), whose alpha means nothing; it is
+	// read only with a definite colour, and a definite colour given
+	// without it is opaque.
 	if v, ok := s.Attr(ns.LOExt, "opacity"); ok && t.color.Known() {
 		if p, ok := percent(string(v)); ok {
 			t.opacity, t.opSet = p, true
@@ -538,29 +477,6 @@ func readText(s *xmlscan.Scanner, t *textProps) {
 	}
 }
 
-// background reads the fill of a properties element: fo:background-color,
-// or a solid draw:fill.
-func background(s *xmlscan.Scanner) Color {
-	if v, ok := s.Attr(ns.FO, "background-color"); ok {
-		return ParseColor(string(v))
-	}
-	fill, ok := s.Attr(ns.Draw, "fill")
-	if !ok {
-		return Color{}
-	}
-	switch string(fill) {
-	case "none":
-		return Color{Set: true, None: true}
-	case "solid":
-		if v, ok := s.Attr(ns.Draw, "fill-color"); ok {
-			return ParseColor(string(v))
-		}
-	case "bitmap", "gradient", "hatch":
-		return Color{Set: true, Varied: true}
-	}
-	return Color{}
-}
-
 // ParseColor reads "#rrggbb" or "transparent".
 func ParseColor(v string) Color {
 	v = strings.TrimSpace(v)
@@ -568,9 +484,8 @@ func ParseColor(v string) Color {
 		return Color{Set: true, None: true}
 	}
 	if len(v) == 7 && v[0] == '#' {
-		n, err := strconv.ParseUint(v[1:], 16, 32)
-		if err == nil {
-			return Color{Set: true, R: uint8(n >> 16), G: uint8(n >> 8), B: uint8(n)}
+		if _, err := strconv.ParseUint(v[1:], 16, 32); err == nil {
+			return Color{Set: true}
 		}
 	}
 	return Color{}
@@ -643,8 +558,8 @@ func (set *Set) Para(sc Scope, name string) Resolved {
 }
 
 // Box returns the resolved style of a box of the given family
-// ("table-cell", "section", "graphic", "table"): its background and the
-// text properties it gives its content.
+// ("table-cell", "table", "drawing-page"): whether it hides its sheet or
+// slide, and the text properties it gives its content.
 func (set *Set) Box(sc Scope, family, name string) Resolved {
 	return set.resolve(sc, family, name, Resolved{Outline: -1})
 }
@@ -682,34 +597,12 @@ func apply(r *Resolved, st *Style) {
 	t := &st.text
 	switch t.display {
 	case Off:
-		r.Hidden = true
+		r.DisplayNone = true
 	case On:
-		r.Hidden = false
-	}
-	if t.color.Set {
-		r.Color = t.color
-	}
-	if t.highlight.Set {
-		r.Highlight = t.highlight
-	}
-	if st.background.Set {
-		r.Background = st.background
-	}
-	switch {
-	case t.size > 0:
-		r.Size = t.size
-	case t.sizePct > 0:
-		base := r.Size
-		if base == 0 {
-			base = DefaultSize
-		}
-		r.Size = base * t.sizePct / 100
-	}
-	if t.scale > 0 {
-		r.Scale = t.scale
+		r.DisplayNone = false
 	}
 	if t.opSet {
-		r.Transparent = t.opacity <= 0
+		r.NoInk = t.opacity <= 0
 	}
 	set3 := func(dst *bool, v Tri) {
 		if v != Unset {
@@ -750,9 +643,6 @@ func apply(r *Resolved, st *Style) {
 	}
 }
 
-// DefaultSize is the font size, in points, of text no style gives a size.
-const DefaultSize = 12.0
-
 // List returns the list style of the given name.
 func (set *Set) List(sc Scope, name string) *ListStyle {
 	if l, ok := set.auto[sc].lists[name]; ok {
@@ -767,35 +657,3 @@ func (set *Set) Outline() *ListStyle { return set.outline }
 // LayerHidden reports whether the named drawing layer is not displayed
 // (draw:display="none" in the layer set).
 func (set *Set) LayerHidden(name string) bool { return name != "" && set.hiddenLayers[name] }
-
-// SlideBackground returns the background a master page of a presentation
-// gives its slides (the fill of its drawing-page style, in styles.xml),
-// of the first master page if the name is "" or unknown. It is not Known
-// if the master page gives none.
-func (set *Set) SlideBackground(master string) Color {
-	dp, ok := set.masterBG[master]
-	if !ok {
-		if _, named := set.masters[master]; named {
-			return Color{}
-		}
-		dp = set.masterBG[set.first]
-	}
-	if dp == "" {
-		return Color{}
-	}
-	return set.Box(Styles, "drawing-page", dp).Background
-}
-
-// PageBackground returns the background of the pages of the named master
-// page, or of the first master page if the name is "" or unknown. A page
-// with no background is white.
-func (set *Set) PageBackground(master string) Color {
-	layout, ok := set.masters[master]
-	if !ok {
-		layout = set.masters[set.first]
-	}
-	if bg, ok := set.layouts[layout]; ok && bg.Known() {
-		return bg
-	}
-	return White
-}

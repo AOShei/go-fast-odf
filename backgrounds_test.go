@@ -1,15 +1,10 @@
 package gofastodf
 
-import (
-	"testing"
-
-	"github.com/AOShei/go-fast-core"
-)
+import "testing"
 
 // A shape that is not displayed (draw:display="none", or on a layer that
-// is not) holds hidden text: invisible is listed as checked, so it must be
-// flagged.
-func TestHiddenShapesFlagged(t *testing.T) {
+// is not) holds text the file declares hidden.
+func TestHiddenShapes(t *testing.T) {
 	styles := stylesXML(``, ``, `<draw:layer-set><draw:layer draw:name="layout"/><draw:layer draw:name="secret" draw:display="none"/></draw:layer-set>`+
 		`<style:master-page style:name="Default"/>`)
 	slides := `<draw:page draw:name="p1">` +
@@ -20,18 +15,18 @@ func TestHiddenShapesFlagged(t *testing.T) {
 	doc := extract(t, bodyDoc(t, slideMIME, "", `<office:presentation>`+slides+`</office:presentation>`, member{name: "styles.xml", data: styles}), nil)
 	check(t, doc.Parts[0].Blocks, `
 paragraph Shown
-paragraph{invisible} Not displayed
-paragraph{invisible} On a hidden layer`)
+paragraph{hidden} Not displayed
+paragraph{hidden} On a hidden layer`)
 	text := textDoc(t, "", `<text:p>Visible<draw:frame draw:display="none"><draw:text-box><text:p>Boxed away</text:p></draw:text-box></draw:frame></text:p>`)
 	check(t, body(t, extract(t, text, nil)), `
 paragraph Visible
-paragraph{invisible} Boxed away`)
+paragraph{hidden} Boxed away`)
 }
 
-// Ordinary presentations: light text on a dark background that the
-// master page gives, and on a slide whose background is a picture, is in
-// plain view. White text on a white master still is not.
-func TestSlideBackgroundsNotFlagged(t *testing.T) {
+// Backgrounds are not compared with text colour: light text on a dark
+// master, on a picture, and white text on a white master all carry no
+// reason (a former low-contrast case).
+func TestSlideBackgroundsNotJudged(t *testing.T) {
 	styles := stylesXML(``,
 		`<style:style style:name="Mdp1" style:family="drawing-page"><style:drawing-page-properties draw:fill="solid" draw:fill-color="#1c1c1c"/></style:style>`+
 			`<style:style style:name="Mdp2" style:family="drawing-page"><style:drawing-page-properties draw:fill="bitmap" draw:fill-image-name="Sky"/></style:style>`+
@@ -46,11 +41,12 @@ func TestSlideBackgroundsNotFlagged(t *testing.T) {
 		`<draw:page draw:name="p2" draw:master-page-name="Photo">` + frame + `</draw:page>` +
 		`<draw:page draw:name="p3" draw:master-page-name="Light" draw:style-name="dp2">` + frame + `</draw:page>`
 	doc := extract(t, bodyDoc(t, slideMIME, auto, `<office:presentation>`+slides+`</office:presentation>`, member{name: "styles.xml", data: styles}), nil)
-	noHidden(t, doc)
+	noDisplay(t, doc)
 
 	light := `<draw:page draw:name="p4" draw:master-page-name="Light">` + frame + `</draw:page>`
 	doc = extract(t, bodyDoc(t, slideMIME, auto, `<office:presentation>`+light+`</office:presentation>`, member{name: "styles.xml", data: styles}), nil)
-	if b := doc.Parts[0].Blocks; len(b) != 1 || b[0].Hidden != gofastcore.HiddenLowContrast {
+	noDisplay(t, doc)
+	if b := doc.Parts[0].Blocks; len(b) != 1 || b[0].Text != "Light words" {
 		t.Errorf("white on white: %s", summary(b))
 	}
 }

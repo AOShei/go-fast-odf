@@ -31,9 +31,6 @@ const (
 	WarnPartDamaged   = "odf.part_damaged"
 )
 
-// HiddenChecked is what the reader checks completely.
-const HiddenChecked = gofastcore.HiddenInvisible | gofastcore.HiddenTiny | gofastcore.HiddenLowContrast | gofastcore.HiddenChars
-
 // Config holds the settings of the public Extractor that concern text
 // documents.
 type Config struct {
@@ -64,9 +61,8 @@ var errStop = errors.New("odt: reading stopped")
 
 // ctxt is what a block inherits from where it stands.
 type ctxt struct {
-	hidden gofastcore.Hidden // reasons that apply to all of it
-	bg     style.Color       // what is behind it
-	list   *listCtx          // the list it is in, if any
+	hidden gofastcore.Display // reasons the file declares for all of it
+	list   *listCtx           // the list it is in, if any
 	// breaks says an empty bordered paragraph here may be a thematic
 	// break: the body of a text document and its sections, not cells,
 	// notes, frames, headers or footers.
@@ -121,8 +117,6 @@ type reader struct {
 	prevSeq int    // the seq of the last paragraph where breaks may be
 	prevSig string // its border
 	pend    *pendingBreak
-
-	outliers, storedOutliers int
 
 	cur  *para // the paragraph being read, if any
 	held int   // bytes held by the paragraphs cur stands in
@@ -190,11 +184,10 @@ func Read(ctx context.Context, pkg *odpkg.Package, set *style.Set, opts *gofastc
 	r.unplacedControls()
 	res.Children = r.children
 	if len(r.userVars) > 0 {
-		// Not hidden as a whole: what files keep and never show is
-		// routine. Its outliers are flagged block by block.
+		// What the file keeps and shows nowhere, with no reason: it is
+		// where it came from that this part records.
 		st := &gofastcore.Part{Kind: gofastcore.PartStored, Number: len(res.Parts) + 1, Blocks: r.userVars}
-		outlierWarning(st, r.storedOutliers)
-		st.MarkHidden()
+		st.Finish()
 		res.Stored = st
 	}
 	res.ActiveContent = r.active
@@ -226,7 +219,7 @@ func (r *reader) textBody(serr error) gofastcore.Part {
 	part := gofastcore.Part{Kind: gofastcore.PartBody, Number: 1, Blocks: []gofastcore.Block{}}
 	var body []gofastcore.Block
 	if serr == nil && r.s.Depth() == 3 {
-		r.blocks(ctxt{bg: r.set.PageBackground(""), breaks: true}, &body)
+		r.blocks(ctxt{breaks: true}, &body)
 		serr = r.s.Err()
 	}
 	r.noteFailure(&part, "content.xml", serr)
@@ -253,36 +246,9 @@ func (r *reader) textBody(serr error) gofastcore.Part {
 	return part
 }
 
-// unshown flags b invisible if it is an outlier by core's rule
-// (gofastcore.UnshownOutlier: routine unshown data out of proportion for
-// its kind), and counts it for the warning of the part it goes to (stored
-// says the stored part). Such data (a user field, a named range, a
-// condition, a form value placed nowhere) is otherwise not flagged.
-func (r *reader) unshown(b *gofastcore.Block, stored bool) {
-	if !gofastcore.UnshownOutlier(b.Text) {
-		return
-	}
-	b.Hidden |= gofastcore.HiddenInvisible
-	if stored {
-		r.storedOutliers++
-	} else {
-		r.outliers++
-	}
-}
-
-func outlierWarning(part *gofastcore.Part, n int) {
-	if n > 0 {
-		part.Warn(gofastcore.SeverityWarning, gofastcore.WarnTextUnshownOutlier,
-			fmt.Sprintf("%d items of data the file keeps and never shows hold more than %d words or %d characters each",
-				n, gofastcore.UnshownOutlierWords, gofastcore.UnshownOutlierChars))
-	}
-}
-
-// finish adds the warnings a part's reading gave rise to and marks its
-// hidden text.
+// finish adds the warnings a part's reading gave rise to and finishes it
+// (gofastcore.Part.Finish).
 func (r *reader) finish(part *gofastcore.Part, what string) {
-	outlierWarning(part, r.outliers)
-	r.outliers = 0
 	if r.stopped && r.limitMsg != "" {
 		part.Warn(gofastcore.SeverityError, gofastcore.WarnLimitExceeded, r.limitMsg)
 		r.limitMsg = "" // said once, on the part where it happened
@@ -298,7 +264,7 @@ func (r *reader) finish(part *gofastcore.Part, what string) {
 	if len(part.Blocks) == 0 && len(part.Warnings) == 0 {
 		part.Warn(gofastcore.SeverityWarning, gofastcore.WarnPartNoText, "the "+what+" has no text and no images")
 	}
-	part.MarkHidden()
+	part.Finish()
 }
 
 // noteFailure turns the error that ended a stream into a warning.
@@ -444,17 +410,14 @@ func (r *reader) blocks(c ctxt, dst *[]gofastcore.Block) {
 func (r *reader) section(c ctxt, dst *[]gofastcore.Block) {
 	switch r.attr(ns.Text, "display") {
 	case "none":
-		c.hidden |= gofastcore.HiddenInvisible
+		c.hidden |= gofastcore.DisplayHidden
 	case "condition":
-		// Hidden when its condition holds. Conditions are not evaluated:
-		// the section is flagged where the file records it hidden or the
-		// condition is literally true, as for hidden paragraphs.
-		if hiddenNow(r.attr(ns.Text, "is-hidden"), r.attr(ns.Text, "condition")) {
-			c.hidden |= gofastcore.HiddenInvisible
+		// Hidden when its condition holds. Conditions are never
+		// evaluated: the section is reported hidden only where the file
+		// records it so (text:is-hidden="true").
+		if r.attr(ns.Text, "is-hidden") == "true" {
+			c.hidden |= gofastcore.DisplayHidden
 		}
-	}
-	if bg := r.set.Box(r.sc, "section", r.attr(ns.Text, "style-name")).Background; bg.Known() {
-		c.bg = bg
 	}
 	s := &r.s
 	depth := s.Depth()
@@ -542,7 +505,6 @@ func (r *reader) userFields() {
 		if name != "" {
 			b.Attrs[gofastcore.AttrField] = name
 		}
-		r.unshown(&b, true)
 		if !r.emit(&r.userVars, b) {
 			return
 		}
@@ -553,11 +515,10 @@ func (r *reader) userFields() {
 
 // run is the formatting in force for a stretch of text.
 type run struct {
-	eff    style.Resolved // what decides visibility
+	eff    style.Resolved // the style, with what it declares about display
 	inline gofastcore.Style
 	href   string
-	hidden gofastcore.Hidden // reasons from fields (hidden text)
-	bg     style.Color
+	hidden gofastcore.Display // reasons declared by fields (hidden text) and containers
 }
 
 type para struct {
@@ -567,7 +528,7 @@ type para struct {
 	space     bool // the last thing written was white space, or nothing
 	marker    string
 	hasMarker bool
-	hidden    gofastcore.Hidden // the paragraph is hidden (text:hidden-paragraph)
+	hidden    gofastcore.Display // the paragraph is hidden (text:hidden-paragraph)
 	cut       bool
 }
 
@@ -601,10 +562,6 @@ func (r *reader) paragraph(c ctxt, heading bool, item *itemCtx, dst *[]gofastcor
 			anchor = clean.Label(r.attr(ns.Text, "id"))
 		}
 	}
-	bg := c.bg
-	if ps.Background.Known() {
-		bg = ps.Background
-	}
 	p := &para{space: true}
 	// A paragraph in a paragraph (a text box anchored in it, a note) has
 	// a buffer of its own while the outer one is held: both count.
@@ -613,7 +570,7 @@ func (r *reader) paragraph(c ctxt, heading bool, item *itemCtx, dst *[]gofastcor
 		r.held += len(outer.buf)
 	}
 	r.cur = p
-	r.inline(p, run{eff: ps, bg: bg}, s.Depth())
+	r.inline(p, run{eff: ps}, s.Depth())
 	r.cur, r.held = outer, held
 
 	from, to := trimBounds(p.buf)
@@ -626,7 +583,7 @@ func (r *reader) paragraph(c ctxt, heading bool, item *itemCtx, dst *[]gofastcor
 	if from < to {
 		b.Text = string(p.buf[from:to])
 		spans, all := settle(p.spans, from, to, p.buf)
-		b.Spans, b.Hidden = spans, all
+		b.Spans, b.Display = spans, all
 	}
 	whole(&b, c.hidden|p.hidden)
 
@@ -724,15 +681,15 @@ func none(b string) bool { return b == "" || b == "none" }
 
 // whole adds reasons that apply to all of a block, taking them off its
 // spans, where they would say they apply only there.
-func whole(b *gofastcore.Block, h gofastcore.Hidden) {
+func whole(b *gofastcore.Block, h gofastcore.Display) {
 	if h == 0 || b.Text == "" && b.Table == nil {
 		return
 	}
-	b.Hidden |= h
+	b.Display |= h
 	kept := b.Spans[:0]
 	for _, sp := range b.Spans {
-		sp.Hidden &^= h
-		if sp.Hidden != 0 || sp.Style != 0 || sp.Href != "" {
+		sp.Display &^= h
+		if sp.Display != 0 || sp.Style != 0 || sp.Href != "" {
 			kept = append(kept, sp)
 		}
 	}
@@ -741,17 +698,17 @@ func whole(b *gofastcore.Block, h gofastcore.Hidden) {
 	}
 	b.Spans = kept
 	if b.Table != nil {
-		regions := b.Table.Hidden[:0]
-		for _, reg := range b.Table.Hidden {
-			reg.Hidden &^= h
-			if reg.Hidden != 0 {
+		regions := b.Table.Display[:0]
+		for _, reg := range b.Table.Display {
+			reg.Display &^= h
+			if reg.Display != 0 {
 				regions = append(regions, reg)
 			}
 		}
 		if len(regions) == 0 {
 			regions = nil
 		}
-		b.Table.Hidden = regions
+		b.Table.Display = regions
 	}
 }
 

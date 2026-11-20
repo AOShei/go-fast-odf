@@ -1,9 +1,11 @@
 // Copied from github.com/AOShei/go-fast-ooxml internal/hidden (MIT License,
-// Copyright (c) 2025 Andrew O'Shei; see LICENSE and NOTICE).
+// Copyright (c) 2025 Andrew O'Shei; see LICENSE and NOTICE), and adapted
+// to go-fast-core's Display.
 
-// Package hidden has what the readers of the three document kinds share
-// in working out which text a reader of the document cannot see.
-package hidden
+// Package display settles the display reasons a file declares for
+// stretches of a paragraph (text:display="none", no ink) onto the
+// paragraph's block.
+package display
 
 import (
 	"bytes"
@@ -12,26 +14,26 @@ import (
 )
 
 // Settle turns the spans collected while a paragraph was read into the
-// spans and hidden reasons of its block. The spans are moved to the
+// spans and display reasons of its block. The spans are moved to the
 // trimmed text, raw[from:to]. A reason that covers all of the text becomes
 // a reason of the whole block, which is how the model says it; one that
 // covers part stays on its spans.
-func Settle(collected []gofastcore.Span, from, to int, raw []byte) ([]gofastcore.Span, gofastcore.Hidden) {
+func Settle(collected []gofastcore.Span, from, to int, raw []byte) ([]gofastcore.Span, gofastcore.Display) {
 	if len(collected) == 0 {
 		return nil, 0
 	}
-	var all gofastcore.Hidden
+	var all gofastcore.Display
 	spans := make([]gofastcore.Span, 0, len(collected))
 	for _, sp := range collected {
 		sp.Start, sp.End = max(sp.Start, from)-from, min(sp.End, to)-from
 		if sp.Start < sp.End {
 			spans = append(spans, sp)
-			all |= sp.Hidden
+			all |= sp.Display
 		}
 	}
 	text := raw[from:to]
 	whole := all
-	for bit := gofastcore.Hidden(1); bit != 0 && bit <= all; bit <<= 1 {
+	for bit := gofastcore.Display(1); bit != 0 && bit <= all; bit <<= 1 {
 		if all&bit == 0 {
 			continue
 		}
@@ -39,7 +41,7 @@ func Settle(collected []gofastcore.Span, from, to int, raw []byte) ([]gofastcore
 		// outside the spans that carry it.
 		at := 0
 		for _, sp := range spans {
-			if sp.Hidden&bit == 0 {
+			if sp.Display&bit == 0 {
 				continue
 			}
 			if len(bytes.TrimSpace(text[at:sp.Start])) > 0 {
@@ -54,8 +56,8 @@ func Settle(collected []gofastcore.Span, from, to int, raw []byte) ([]gofastcore
 	}
 	kept := spans[:0]
 	for _, sp := range spans {
-		sp.Hidden &^= whole
-		if sp.Hidden != 0 || sp.Style != 0 || sp.Href != "" {
+		sp.Display &^= whole
+		if sp.Display != 0 || sp.Style != 0 || sp.Href != "" {
 			kept = append(kept, sp)
 		}
 	}

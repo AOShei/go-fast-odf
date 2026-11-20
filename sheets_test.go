@@ -58,7 +58,7 @@ func TestSpreadsheet(t *testing.T) {
 		t.Fatalf("format %s, %d parts", doc.Source.Format, len(doc.Parts))
 	}
 	data := doc.Parts[0]
-	if data.Kind != gofastcore.PartSheet || data.Name != "Data" || data.Hidden != 0 {
+	if data.Kind != gofastcore.PartSheet || data.Name != "Data" || data.Display != 0 {
 		t.Errorf("sheet %+v", data)
 	}
 	check(t, data.Blocks, `
@@ -92,14 +92,14 @@ note =.$Lists.A1:A3`)
 		t.Errorf("choices %+v", b[3])
 	}
 	hid := map[string]bool{}
-	for _, h := range b[0].Table.Hidden {
+	for _, h := range b[0].Table.Display {
 		hid[strings.Join([]string{string(rune('0' + h.Row)), string(rune('0' + h.Col)), string(rune('0' + h.RowSpan)), string(rune('0' + h.ColSpan))}, ",")] = true
 	}
 	if !hid["2,0,1,3"] || !hid["0,2,3,1"] || !hid["2,2,1,1"] {
-		t.Errorf("hidden regions %+v", b[0].Table.Hidden)
+		t.Errorf("hidden regions %+v", b[0].Table.Display)
 	}
 	lists := doc.Parts[1]
-	if lists.Name != "Lists" || lists.Hidden != gofastcore.HiddenInvisible || !lists.Has(gofastcore.WarnTextHidden) {
+	if lists.Name != "Lists" || lists.Display != gofastcore.DisplayHidden || len(lists.Warnings) != 0 {
 		t.Errorf("hidden sheet %+v", lists)
 	}
 	stored := doc.Parts[2]
@@ -113,16 +113,16 @@ note =.$Lists.A1:A3`)
 	}
 }
 
-// LibreOffice's hidden copy of an externally linked sheet is routine and
-// not flagged; another hidden sheet is.
+// LibreOffice's copy of an externally linked sheet is declared hidden
+// (table:display="false"), so it is reported hidden like any other.
 func TestLinkCacheSheet(t *testing.T) {
 	auto := `<style:style style:name="ta_extref" style:family="table"><style:table-properties table:display="false"/></style:style>`
 	body := `<office:spreadsheet><table:table table:name="Main"><table:table-row>` + cell("=x") + `</table:table-row></table:table>` +
 		`<table:table table:name="&apos;file:///data/source.ods&apos;#Data" table:print="false" table:style-name="ta_extref"><table:table-row>` + cell("cached") + `</table:table-row></table:table>` +
 		`<table:table table:name="Secret" table:style-name="ta_extref"><table:table-row>` + cell("hidden") + `</table:table-row></table:table></office:spreadsheet>`
 	doc := extract(t, bodyDoc(t, sheetMIME, auto, body), nil)
-	if doc.Parts[1].Hidden != 0 || doc.Parts[1].Blocks[0].Hidden != 0 || doc.Parts[2].Hidden != gofastcore.HiddenInvisible {
-		t.Errorf("link cache %v %v, hidden sheet %v", doc.Parts[1].Hidden, doc.Parts[1].Blocks[0].Hidden, doc.Parts[2].Hidden)
+	if doc.Parts[1].Display != gofastcore.DisplayHidden || doc.Parts[1].Blocks[0].Display != gofastcore.DisplayHidden || doc.Parts[2].Display != gofastcore.DisplayHidden {
+		t.Errorf("link cache %v %v, hidden sheet %v", doc.Parts[1].Display, doc.Parts[1].Blocks[0].Display, doc.Parts[2].Display)
 	}
 }
 
@@ -135,7 +135,7 @@ func TestOpacityWithAutomaticColour(t *testing.T) {
 	data := textDoc(t, "", `<text:p>Plain <text:span text:style-name="Red">red</text:span> and <text:span text:style-name="Clear">clear</text:span></text:p>`,
 		member{name: "styles.xml", data: stylesXML(common, "", "")})
 	b := body(t, extract(t, data, nil))
-	if got, h := hiddenOf(b[0]); got != "clear" || h != gofastcore.HiddenTransparent {
+	if got, h := hiddenOf(b[0]); got != "clear" || h != gofastcore.DisplayNoInk {
 		t.Errorf("got %q %v", got, h)
 	}
 }
@@ -211,17 +211,18 @@ heading1 The Title
 list_item1[•] Point
 paragraph Upper right
 paragraph Lower left
-paragraph{low_contrast} Shape ghost
+paragraph Shape ghost
 footer Footer text
 note Say hello./Then go on.`)
 	if s1.Blocks[6].Attrs[gofastcore.AttrNoteType] != gofastcore.NoteSpeaker {
 		t.Errorf("notes %+v", s1.Blocks[6])
 	}
-	if got, h := hiddenOf(s1.Blocks[4]); got != "ghost" || h != gofastcore.HiddenLowContrast {
-		t.Errorf("ghost %q %v", got, h)
+	// White text on the default white slide: colour is not judged.
+	if s1.Blocks[4].Display != 0 || len(s1.Blocks[4].Spans) != 0 {
+		t.Errorf("ghost %+v", s1.Blocks[4])
 	}
 	s2 := doc.Parts[1]
-	if s2.Hidden != gofastcore.HiddenInvisible || s2.Name != "Backup" || s2.Blocks[0].Hidden != gofastcore.HiddenInvisible {
+	if s2.Display != gofastcore.DisplayHidden || s2.Name != "Backup" || s2.Blocks[0].Display != gofastcore.DisplayHidden {
 		t.Errorf("hidden slide %+v", s2)
 	}
 }

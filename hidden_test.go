@@ -21,16 +21,16 @@ const hidingStyles = `<style:style style:name="Hide" style:family="text"><style:
 
 // hiddenOf returns the text of the hidden spans of a block, or the whole
 // text when the reasons cover all of it.
-func hiddenOf(b gofastcore.Block) (string, gofastcore.Hidden) {
+func hiddenOf(b gofastcore.Block) (string, gofastcore.Display) {
 	if len(b.Spans) == 0 {
-		return b.Text, b.Hidden
+		return b.Text, b.Display
 	}
 	var out string
-	var h gofastcore.Hidden
+	var h gofastcore.Display
 	for _, sp := range b.Spans {
-		if sp.Hidden != 0 {
+		if sp.Display != 0 {
 			out += b.Text[sp.Start:sp.End]
-			h |= sp.Hidden
+			h |= sp.Display
 		}
 	}
 	return out, h
@@ -57,49 +57,43 @@ func TestHiddenText(t *testing.T) {
 	b := body(t, doc)
 	want := []struct {
 		text   string
-		hidden gofastcore.Hidden
+		hidden gofastcore.Display
 	}{
-		{"secret", gofastcore.HiddenInvisible},
-		{"All hidden", gofastcore.HiddenInvisible},
-		{"Gone", gofastcore.HiddenInvisible},
-		{"In hidden section", gofastcore.HiddenInvisible},
-		{"white words", gofastcore.HiddenLowContrast},
-		{"cream words", gofastcore.HiddenLowContrast},
+		{"secret", gofastcore.DisplayHidden},
+		{"All hidden", gofastcore.DisplayHidden},
+		{"Gone", gofastcore.DisplayHidden},
+		{"In hidden section", gofastcore.DisplayHidden},
+		// Former inferred cases: colour, size, scale and invisible
+		// characters are not judged.
+		{"", 0}, // white on white
+		{"", 0}, // cream on white
 		{"", 0},
 		{"", 0},
-		{"tinyshrunknarrow", gofastcore.HiddenTiny},
-		{"", gofastcore.HiddenChars},
-		{"cond", gofastcore.HiddenInvisible},
+		{"", 0}, // 1pt, 10% and a 10% text scale
+		{"", 0}, // zero-width characters
+		{"cond", gofastcore.DisplayHidden},
 	}
 	if len(b) < len(want)+2 {
 		t.Fatalf("%d blocks:\n%s", len(b), summary(b))
 	}
+	if b[9].Text != "Zero"+strings.Repeat(zwsp, 4)+"width" {
+		t.Errorf("zero-width characters: %q", b[9].Text)
+	}
 	for i, w := range want {
 		got, h := hiddenOf(b[i])
-		if w.hidden == gofastcore.HiddenChars {
-			if b[i].Hidden != gofastcore.HiddenChars {
-				t.Errorf("block %d %q: hidden %v, want invisible_chars", i, b[i].Text, b[i].Hidden)
-			}
-			continue
-		}
-		if b[i].Hidden != w.hidden || (w.hidden != 0 && got != w.text) || h != w.hidden {
-			t.Errorf("block %d %q: hidden %q (%v), block %v; want %q (%v)", i, b[i].Text, got, h, b[i].Hidden, w.text, w.hidden)
+		if b[i].Display != w.hidden || (w.hidden != 0 && got != w.text) || h != w.hidden {
+			t.Errorf("block %d %q: hidden %q (%v), block %v; want %q (%v)", i, b[i].Text, got, h, b[i].Display, w.text, w.hidden)
 		}
 	}
 	tb := b[len(want)]
-	if tb.Table == nil || len(tb.Table.Hidden) != 2 || tb.Hidden != gofastcore.HiddenInvisible {
-		t.Errorf("table hidden: %+v %+v", tb.Hidden, tb.Table)
+	if tb.Table == nil || len(tb.Table.Display) != 2 || tb.Display != gofastcore.DisplayHidden {
+		t.Errorf("table hidden: %+v %+v", tb.Display, tb.Table)
 	}
 	dark := b[len(want)+1]
-	if dark.Table == nil || dark.Hidden != gofastcore.HiddenLowContrast {
-		t.Errorf("black on a black cell: %v", dark.Hidden)
+	if dark.Table == nil || dark.Display != 0 || len(dark.Table.Display) != 0 {
+		t.Errorf("black on a black cell: %v", dark.Display)
 	}
-	if !doc.Parts[0].Has(gofastcore.WarnTextHidden) {
-		t.Error("no text.hidden warning")
-	}
-	if doc.HiddenChecked != gofastcore.HiddenInvisible|gofastcore.HiddenTiny|gofastcore.HiddenLowContrast|gofastcore.HiddenChars {
-		t.Errorf("checked %v", doc.HiddenChecked)
-	}
+	noRemovedWarnings(t, doc)
 }
 
 func TestHiddenInNotesAndCells(t *testing.T) {
@@ -109,20 +103,21 @@ func TestHiddenInNotesAndCells(t *testing.T) {
 	if len(b) != 2 || b[1].Kind != gofastcore.KindFootnote {
 		t.Fatalf("%s", summary(b))
 	}
-	if got, h := hiddenOf(b[1]); got != "unseenall unseen" || h != gofastcore.HiddenInvisible {
+	if got, h := hiddenOf(b[1]); got != "unseenall unseen" || h != gofastcore.DisplayHidden {
 		t.Errorf("footnote hidden %q %v: %+v", got, h, b[1])
 	}
 }
 
-func TestPageBackground(t *testing.T) {
+// Black text on a black page is not compared with the page: no reason.
+func TestPageBackgroundNotJudged(t *testing.T) {
 	styles := stylesXML(`<style:style style:name="Black" style:family="text"><style:text-properties fo:color="#000000"/></style:style>`,
 		`<style:page-layout style:name="pm1"><style:page-layout-properties fo:background-color="#000000"/></style:page-layout>`,
 		`<style:master-page style:name="Standard" style:page-layout-name="pm1"/>`)
 	data := textDoc(t, "", `<text:p>Plain <text:span text:style-name="Black">black on a black page</text:span>.</text:p>`,
 		member{name: "styles.xml", data: styles})
 	b := body(t, extract(t, data, nil))
-	if got, h := hiddenOf(b[0]); h != gofastcore.HiddenLowContrast || got != "black on a black page" {
-		t.Errorf("got %q %v", got, h)
+	if b[0].Display != 0 || len(b[0].Spans) != 0 {
+		t.Errorf("got %+v", b[0])
 	}
 }
 
@@ -138,10 +133,10 @@ func TestInheritedHiding(t *testing.T) {
 		`<text:p text:style-name="Loop1">cycle</text:p>`,
 		member{name: "styles.xml", data: stylesXML(common, "", "")})
 	b := body(t, extract(t, data, nil))
-	if got, h := hiddenOf(b[0]); got != "hidden " || h != gofastcore.HiddenInvisible || b[0].Hidden != gofastcore.HiddenInvisible {
+	if got, h := hiddenOf(b[0]); got != "hidden " || h != gofastcore.DisplayHidden || b[0].Display != gofastcore.DisplayHidden {
 		t.Errorf("got %q %v", got, h)
 	}
-	if b[1].Hidden != 0 {
-		t.Errorf("cycle: %v", b[1].Hidden)
+	if b[1].Display != 0 {
+		t.Errorf("cycle: %v", b[1].Display)
 	}
 }

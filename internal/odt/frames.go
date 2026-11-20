@@ -42,7 +42,7 @@ func (r *reader) drawing(c ctxt, dst *[]gofastcore.Block) {
 	c.breaks = false // a rule in a frame is part of its picture
 	// A shape not displayed, by its own attribute or its layer's.
 	if r.attr(ns.Draw, "display") == "none" || r.set.LayerHidden(r.attr(ns.Draw, "layer")) {
-		c.hidden |= gofastcore.HiddenInvisible
+		c.hidden |= gofastcore.DisplayHidden
 	}
 	switch string(s.Local()) {
 	case "frame":
@@ -85,9 +85,6 @@ func (r *reader) drawChildren(c ctxt, dst *[]gofastcore.Block) {
 // frame reads draw:frame: a text box, a picture, an embedded object.
 func (r *reader) frame(c ctxt, dst *[]gofastcore.Block) {
 	s := &r.s
-	if bg := r.set.Box(r.sc, "graphic", r.attr(ns.Draw, "style-name")).Background; bg.Known() {
-		c.bg = bg
-	}
 	var title, desc string
 	var img *gofastcore.Block
 	imgAt := -1
@@ -349,12 +346,12 @@ func (r *reader) masterPages(part *gofastcore.Part) (headers, footers []gofastco
 			if strings.HasPrefix(local, "footer") {
 				kind = gofastcore.KindFooter
 			}
-			var hidden gofastcore.Hidden
+			var hidden gofastcore.Display
 			if r.attr(ns.Style, "display") == "false" {
-				hidden = gofastcore.HiddenInvisible
+				hidden = gofastcore.DisplayHidden
 			}
 			var tmp []gofastcore.Block
-			r.blocks(ctxt{hidden: hidden, bg: r.set.PageBackground("")}, &tmp)
+			r.blocks(ctxt{hidden: hidden}, &tmp)
 			for _, b := range tmp {
 				if b.Table == nil && b.Image == nil && b.Kind != gofastcore.KindNote && b.Kind != gofastcore.KindFootnote {
 					if b.Marker != "" {
@@ -367,7 +364,7 @@ func (r *reader) masterPages(part *gofastcore.Part) (headers, footers []gofastco
 					}
 					b.Kind, b.Level, b.Ordered = kind, 0, false
 				}
-				key := b.Kind.String() + "\x00" + b.Text + "\x00" + b.Hidden.String()
+				key := b.Kind.String() + "\x00" + b.Text + "\x00" + b.Display.String()
 				if b.Table == nil && b.Image == nil && seen[key] {
 					r.budget.Return(cost(&b))
 					continue

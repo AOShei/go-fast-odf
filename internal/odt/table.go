@@ -19,7 +19,7 @@ const maxRepeat = 1 << 20
 
 type cellIn struct {
 	text             string
-	hidden           gofastcore.Hidden
+	hidden           gofastcore.Display
 	repeat           int
 	colSpan, rowSpan int
 }
@@ -28,12 +28,12 @@ type rowIn struct {
 	cells  []cellIn
 	repeat int
 	header bool
-	hidden gofastcore.Hidden
+	hidden gofastcore.Display
 }
 
 type tableIn struct {
 	rows  []rowIn
-	cols  []gofastcore.Hidden // per column, as far as declared
+	cols  []gofastcore.Display // per column, as far as declared
 	after []gofastcore.Block
 }
 
@@ -45,9 +45,9 @@ func repeat(s string) int {
 	return min(n, maxRepeat)
 }
 
-func visibility(v string) gofastcore.Hidden {
+func visibility(v string) gofastcore.Display {
 	if v == "collapse" || v == "filter" {
-		return gofastcore.HiddenInvisible
+		return gofastcore.DisplayHidden
 	}
 	return 0
 }
@@ -128,10 +128,7 @@ func (r *reader) row(c ctxt, t *tableIn, header bool) {
 		if string(s.Local()) == "covered-table-cell" {
 			cell.colSpan, cell.rowSpan = 1, 1
 		}
-		inner := ctxt{hidden: c.hidden, bg: c.bg}
-		if bg := r.set.Box(r.sc, "table-cell", r.attr(ns.Table, "style-name")).Background; bg.Known() {
-			inner.bg = bg
-		}
+		inner := ctxt{hidden: c.hidden}
 		var content []gofastcore.Block
 		r.blocks(inner, &content)
 		text, _, hid, rest := r.flatten(content)
@@ -171,7 +168,7 @@ func (r *reader) buildTable(t *tableIn) (gofastcore.Block, bool) {
 		return gofastcore.Block{}, false
 	}
 	tb := &gofastcore.Table{Rows: [][]string{}}
-	var hiddenAll gofastcore.Hidden
+	var hiddenAll gofastcore.Display
 	headerDone := false
 	type span struct{ row, col, rows, cols int }
 	var spans []span
@@ -192,7 +189,7 @@ func (r *reader) buildTable(t *tableIn) (gofastcore.Block, bool) {
 					cells[col] = cell.text
 					need += len(cell.text)
 					if cell.hidden != 0 {
-						tb.Hidden = append(tb.Hidden, gofastcore.HiddenCells{Row: at, Col: col, RowSpan: 1, ColSpan: 1, Hidden: cell.hidden})
+						tb.Display = append(tb.Display, gofastcore.DisplayCells{Row: at, Col: col, RowSpan: 1, ColSpan: 1, Display: cell.hidden})
 						hiddenAll |= cell.hidden
 					}
 					if cell.colSpan > 1 || cell.rowSpan > 1 {
@@ -205,19 +202,19 @@ func (r *reader) buildTable(t *tableIn) (gofastcore.Block, bool) {
 				r.stop(textCut)
 				cut = true
 				// Regions recorded for this row go with it.
-				kept := tb.Hidden[:0]
-				for _, h := range tb.Hidden {
+				kept := tb.Display[:0]
+				for _, h := range tb.Display {
 					if h.Row < at {
 						kept = append(kept, h)
 					}
 				}
-				tb.Hidden = kept
+				tb.Display = kept
 				break
 			}
 			r.cells += int64(width)
 			tb.Rows = append(tb.Rows, cells)
 			if row.hidden != 0 {
-				tb.Hidden = append(tb.Hidden, gofastcore.HiddenCells{Row: at, Col: 0, RowSpan: 1, ColSpan: width, Hidden: row.hidden})
+				tb.Display = append(tb.Display, gofastcore.DisplayCells{Row: at, Col: 0, RowSpan: 1, ColSpan: width, Display: row.hidden})
 				hiddenAll |= row.hidden
 			}
 			if row.header && !headerDone {
@@ -252,9 +249,9 @@ func (r *reader) buildTable(t *tableIn) (gofastcore.Block, bool) {
 	tb.Merges = noOverlap(tb.Merges, len(tb.Rows), width)
 	for j := 0; j < width && j < len(t.cols); j++ {
 		if h := t.cols[j]; h != 0 {
-			tb.Hidden = append(tb.Hidden, gofastcore.HiddenCells{Row: 0, Col: j, RowSpan: len(tb.Rows), ColSpan: 1, Hidden: h})
+			tb.Display = append(tb.Display, gofastcore.DisplayCells{Row: 0, Col: j, RowSpan: len(tb.Rows), ColSpan: 1, Display: h})
 			hiddenAll |= h
 		}
 	}
-	return gofastcore.Block{Kind: gofastcore.KindTable, Table: tb, Hidden: hiddenAll}, true
+	return gofastcore.Block{Kind: gofastcore.KindTable, Table: tb, Display: hiddenAll}, true
 }
