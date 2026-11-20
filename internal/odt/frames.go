@@ -39,7 +39,6 @@ var mimeByExt = map[string]string{
 // group, a link around drawings, or a shape, whose text is read as blocks.
 func (r *reader) drawing(c ctxt, dst *[]gofastcore.Block) {
 	s := &r.s
-	c.breaks = false // a rule in a frame is part of its picture
 	// A shape not displayed, by its own attribute or its layer's.
 	if r.attr(ns.Draw, "display") == "none" || r.set.LayerHidden(r.attr(ns.Draw, "layer")) {
 		c.hidden |= gofastcore.DisplayHidden
@@ -353,7 +352,7 @@ func (r *reader) masterPages(part *gofastcore.Part) (headers, footers []gofastco
 			var tmp []gofastcore.Block
 			r.blocks(ctxt{hidden: hidden}, &tmp)
 			for _, b := range tmp {
-				if b.Table == nil && b.Image == nil && b.Kind != gofastcore.KindNote && b.Kind != gofastcore.KindFootnote {
+				if b.Table == nil && b.Image == nil && b.Kind != gofastcore.KindNote && b.Kind != gofastcore.KindFootnote && b.Kind != gofastcore.KindThematicBreak {
 					if b.Marker != "" {
 						b.Text = b.Marker + " " + b.Text
 						for i := range b.Spans {

@@ -522,7 +522,7 @@ func (r *reader) sheetRow(sh *sheetIn, row *int) {
 		cs := r.set.Box(r.sc, "table-cell", styleName)
 		var content []gofastcore.Block
 		r.blocks(ctxt{}, &content)
-		text, spans, hid, rest := r.flatten(content)
+		text, spans, hid, rest := r.flatten(content, false)
 		if vt == "date" || vt == "time" {
 			// A date or time stored as a value is written in ISO 8601,
 			// whatever the display format.

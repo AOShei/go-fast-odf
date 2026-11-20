@@ -63,10 +63,6 @@ var errStop = errors.New("odt: reading stopped")
 type ctxt struct {
 	hidden gofastcore.Display // reasons the file declares for all of it
 	list   *listCtx           // the list it is in, if any
-	// breaks says an empty "Horizontal Line" paragraph here is a
-	// thematic break: the body of a text document and its sections, not
-	// cells, notes, frames, headers or footers.
-	breaks bool
 }
 
 type reader struct {
@@ -209,7 +205,7 @@ func (r *reader) textBody(serr error) gofastcore.Part {
 	part := gofastcore.Part{Kind: gofastcore.PartBody, Number: 1, Blocks: []gofastcore.Block{}}
 	var body []gofastcore.Block
 	if serr == nil && r.s.Depth() == 3 {
-		r.blocks(ctxt{breaks: true}, &body)
+		r.blocks(ctxt{}, &body)
 		serr = r.s.Err()
 	}
 	r.noteFailure(&part, "content.xml", serr)
@@ -610,7 +606,7 @@ func (r *reader) paragraph(c ctxt, heading bool, item *itemCtx, dst *[]gofastcor
 		b.Level = uint8(min(c.list.depth, 255))
 		b.Ordered = c.list.ordered()
 	}
-	if c.breaks && !heading && item == nil && c.list == nil {
+	if !heading {
 		r.thematicBreak(ps, b.Text == "" && len(p.after) == 0, dst)
 	}
 	if b.Text != "" {

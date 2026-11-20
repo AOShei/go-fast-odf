@@ -106,7 +106,7 @@ func (r *reader) slide(n int) (gofastcore.Part, slideUse) {
 		case space == ns.Presentation && local == "notes":
 			var nb []gofastcore.Block
 			r.blocks(ctxt{}, &nb)
-			text, spans, hid, rest := r.flatten(nb)
+			text, spans, hid, rest := r.flatten(nb, false)
 			if text != "" {
 				r.emit(&notes, gofastcore.Block{Kind: gofastcore.KindNote, Text: text, Spans: spans, Display: hid,
 					Attrs: map[string]string{gofastcore.AttrNoteType: gofastcore.NoteSpeaker}})

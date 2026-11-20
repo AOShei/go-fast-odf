@@ -22,8 +22,13 @@ type deletion struct {
 // table cell into one text, one line per block, with their spans and
 // hidden reasons. Blocks that are not text (pictures, notes inside them)
 // are returned as rest. What emit charged for the joined blocks is given
-// back: the text is charged again with the block it becomes.
-func (r *reader) flatten(blocks []gofastcore.Block) (text string, spans []gofastcore.Span, all gofastcore.Display, rest []gofastcore.Block) {
+// back: the text is charged again with the block it becomes. With
+// keepBreaks (footnotes and endnotes, which are part of the document's
+// text), thematic breaks are returned in rest, to stand after the block.
+// Without it they are dropped, as the empty paragraphs they were written
+// as: a table cell's text is all it has, and a break inside a comment,
+// a speaker's note or a tracked deletion is not a break in the document.
+func (r *reader) flatten(blocks []gofastcore.Block, keepBreaks bool) (text string, spans []gofastcore.Span, all gofastcore.Display, rest []gofastcore.Block) {
 	var buf []byte
 	var collected []gofastcore.Span
 	for i := range blocks {
@@ -35,7 +40,8 @@ func (r *reader) flatten(blocks []gofastcore.Block) (text string, spans []gofast
 		case b.Table != nil:
 			line = tableText(b.Table)
 			lineWhole = b.Display
-		case b.Image != nil, b.Kind == gofastcore.KindNote, b.Kind == gofastcore.KindFootnote:
+		case b.Image != nil, b.Kind == gofastcore.KindNote, b.Kind == gofastcore.KindFootnote,
+			b.Kind == gofastcore.KindThematicBreak && keepBreaks:
 			rest = append(rest, *b)
 			continue
 		default:
@@ -137,7 +143,7 @@ func (r *reader) note(p *para, ru run) {
 			r.blocks(ctxt{hidden: reasons(&ru) & gofastcore.DisplayHidden}, &body)
 		}
 	}
-	text, spans, all, rest := r.flatten(body)
+	text, spans, all, rest := r.flatten(body, true)
 	dst := &p.after
 	if class == "endnote" {
 		dst = &r.endnotes
@@ -180,7 +186,7 @@ func (r *reader) annotation(c ctxt, dst *[]gofastcore.Block) {
 			r.blockAt(ctxt{hidden: c.hidden}, &body)
 		}
 	}
-	text, spans, all, rest := r.flatten(body)
+	text, spans, all, rest := r.flatten(body, false)
 	if text != "" {
 		attrs := map[string]string{gofastcore.AttrNoteType: gofastcore.NoteComment}
 		if author != "" {
@@ -275,7 +281,7 @@ func (r *reader) useDeletion(id string, dst *[]gofastcore.Block) {
 		return
 	}
 	r.usedDel[id] = true
-	text, spans, all, rest := r.flatten(d.blocks)
+	text, spans, all, rest := r.flatten(d.blocks, false)
 	d.blocks = nil
 	if text != "" {
 		attrs := map[string]string{gofastcore.AttrNoteType: gofastcore.NoteDeletion}

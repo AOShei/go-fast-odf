@@ -2,7 +2,7 @@
 
 Module `github.com/AOShei/go-fast-odf`, package `gofastodf`. Extracts
 OpenDocument 1.0 to 1.3 files into the go-fast-core model (core pinned at
-commit ebecf3c). Standard library and go-fast modules only.
+commit d4cd8e2). Standard library and go-fast modules only.
 
 Status legend: **done**, **partial**, **todo**.
 
@@ -68,7 +68,7 @@ execs/s per target.
 | odp: tables in frames checked with a real slide test | todo |
 | Embedded objects (`draw:object` formulas as `formula`, charts, `draw:object-ole` as children) | done (run 3) |
 | Form controls and their values | done (run 3) |
-| Thematic breaks (core df335f0) for empty bottom-bordered paragraphs | done (run 3); bordered half removed (R7, branch `no-inferred-break`): only empty "Horizontal Line" paragraphs, origin native |
+| Thematic breaks (core df335f0) for empty bottom-bordered paragraphs | done (run 3); bordered half removed (R7, branch `no-inferred-break`): only empty "Horizontal Line" paragraphs, origin native; read wherever paragraphs are read (lists, frames, notes, headers/footers, slides), not in table cells, whose paragraphs become cell text |
 | Sub-documents held whole in a flat file's draw:object handed to children | todo |
 | Core's shared outlier rule (17a0e50), corpus test, automatic-colour opacity, external-link cache sheets | done (run 5); outlier rule and link-cache exemption removed in run 6 |
 | Hidden flag as a signal (core 4de43b1) | done (run 4); superseded by run 6 |

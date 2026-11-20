@@ -4,6 +4,11 @@ All notable changes to go-fast-odf are recorded here, in the style of
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). No version has
 been released yet.
 
+## Unreleased: core d4cd8e2
+
+- go-fast-core pinned at `d4cd8e2`: `Validate` now rejects an inferred
+  `thematic_break`; this library emits only declared ones and passes.
+
 ## [Unreleased]
 
 ### Changed: no inferred thematic break (branch `no-inferred-break`)
@@ -16,6 +21,15 @@ been released yet.
   becomes a break; it is a border and gives no block. The adjacency
   check that took a break back when the next paragraph shared its
   border, and the paragraph-border reading only it used, are gone.
+- The "Horizontal Line" break is now read wherever paragraphs are read,
+  not only in the body: list items, frames and text boxes, shapes,
+  presentation and drawing text, headers and footers (the break goes
+  with the header's or footer's blocks), footnotes and endnotes (the
+  break follows the note block, whose text cannot hold it). Not in table
+  cells, whose paragraphs become the cell's text, nor in comments, speaker
+  notes or tracked deletions, which are not the document's text: there
+  the empty paragraph is left out as before.
+  Headings in that style are not breaks.
 
 ### Changed: stored kinds (branch `stored-kinds`)
 
