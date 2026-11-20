@@ -79,5 +79,6 @@ execs/s per target.
 
 | Item | Status |
 |---|---|
-| Decryption: PBKDF2 + AES-256-CBC (ODF 1.2), AES-GCM (1.3). Blowfish and Argon2 are not in the standard library: `ErrUnsupported` | todo |
+| Decryption (branch `phase-6-decryption`): AES-CBC with PBKDF2, SHA-1 or SHA-256 start key, `SHA1/1K` or `sha256-1k` checksum (ODF 1.2, 1.3); the whole-package `encrypted-package` of ODF 1.4 with AES-GCM and Argon2id (`internal/argon2`, from RFC 9106 and RFC 7693). Tested on LibreOffice 26.8 files in `testdata/encrypted`. Caps: PBKDF2 10 million iterations per member, 30 million per package; Argon2 1 GiB, 64 passes, 64 lanes, memory times passes 4 GiB | done |
+| Decryption of Blowfish CFB (ODF 1.0, 1.1), `internal/blowfish`: tables computed from pi with `math/big`, checked against Schneier's vectors | done |
 | File API (part at a time) like gofastooxml.File | todo |

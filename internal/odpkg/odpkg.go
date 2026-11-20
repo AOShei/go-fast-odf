@@ -17,6 +17,7 @@ import (
 	"io"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 
 	"github.com/AOShei/go-fast-odf/internal/clean"
@@ -98,6 +99,11 @@ type Package struct {
 	manifest  map[string]Entry
 	mime      string // what the mimetype member says, or the manifest's root entry
 	damaged   bool   // the manifest could not be read to its end
+	password  string
+	kdfWork   atomic.Int64 // PBKDF2 iterations spent
+	argonWork atomic.Int64 // Argon2 KiB-passes spent
+	keyMu     sync.Mutex
+	keys      map[string][]byte // derived keys, by member
 }
 
 // maxManifestEntries bounds the entries read from a manifest. Each costs
@@ -387,8 +393,11 @@ func (p *Package) Open(name string) (io.ReadCloser, error) {
 	if !ok {
 		return nil, fmt.Errorf("%w: %s", ErrNotFound, clean.Label(name))
 	}
-	if f.Flags&1 != 0 || p.Encrypted(name) {
+	if f.Flags&1 != 0 || p.Encrypted(name) && p.password == "" {
 		return nil, fmt.Errorf("%w: %s", ErrEncrypted, clean.Label(name))
+	}
+	if p.Encrypted(name) {
+		return p.openEncrypted(name)
 	}
 	return p.OpenRaw(name)
 }
@@ -499,7 +508,17 @@ func (p *Package) readManifest() error {
 			case "key-derivation":
 				if enc != nil {
 					enc.Derivation, enc.KeySize, enc.Iterations, enc.Salt = attr("key-derivation-name"), num("key-size"), num("iteration-count"), attr("salt")
-					enc.ArgonIterates, enc.ArgonMemory, enc.ArgonLanes = num("argon2-iterations"), num("argon2-memory"), num("argon2-lanes")
+					// ODF 1.4 names the Argon2 parameters in the manifest
+					// namespace; LibreOffice wrote them in its own first.
+					argon := func(local string) int {
+						v, ok := s.Attr(ns.Manifest, local)
+						if !ok {
+							v, _ = s.Attr(ns.LOExt, local)
+						}
+						n, _ := strconv.Atoi(strings.TrimSpace(string(v)))
+						return n
+					}
+					enc.ArgonIterates, enc.ArgonMemory, enc.ArgonLanes = argon("argon2-iterations"), argon("argon2-memory"), argon("argon2-lanes")
 				}
 			}
 		case xmlscan.EOF:
