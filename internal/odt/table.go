@@ -236,35 +236,20 @@ func (r *reader) buildTable(t *tableIn) (gofastcore.Block, bool) {
 	if tb.HeaderRows >= len(tb.Rows) {
 		tb.HeaderRows = 0
 	}
-	// Merges, cut to the table as it is, and none over another.
-	covered := map[[2]int]bool{}
+	// Merges, cut to the table as it is, and none over another. Finding
+	// overlaps is bounded work, as it is for sheets: a file can give many
+	// merges that each overlap one before only at the far end.
 	for _, sp := range spans {
-		if sp.row >= len(tb.Rows) || covered[[2]int{sp.row, sp.col}] {
+		if sp.row >= len(tb.Rows) {
 			continue
 		}
 		rs, cs := min(sp.rows, len(tb.Rows)-sp.row), min(sp.cols, width-sp.col)
 		if rs*cs <= 1 {
 			continue
 		}
-		overlap := false
-		for i := sp.row; i < sp.row+rs && !overlap; i++ {
-			for j := sp.col; j < sp.col+cs; j++ {
-				if covered[[2]int{i, j}] {
-					overlap = true
-					break
-				}
-			}
-		}
-		if overlap {
-			continue
-		}
-		for i := sp.row; i < sp.row+rs; i++ {
-			for j := sp.col; j < sp.col+cs; j++ {
-				covered[[2]int{i, j}] = true
-			}
-		}
 		tb.Merges = append(tb.Merges, gofastcore.Merge{Row: sp.row, Col: sp.col, RowSpan: rs, ColSpan: cs})
 	}
+	tb.Merges = noOverlap(tb.Merges, len(tb.Rows), width)
 	for j := 0; j < width && j < len(t.cols); j++ {
 		if h := t.cols[j]; h != 0 {
 			tb.Hidden = append(tb.Hidden, gofastcore.HiddenCells{Row: 0, Col: j, RowSpan: len(tb.Rows), ColSpan: 1, Hidden: h})
