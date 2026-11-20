@@ -127,14 +127,15 @@ func corpusOne(path string) corpusResult {
 }
 
 type tally struct {
-	files    map[string]int
-	counts   map[string]int
-	reasons  map[string]int
-	warnings map[string]int
+	files     map[string]int
+	counts    map[string]int
+	reasons   map[string]int
+	filesWith map[string]int
+	warnings  map[string]int
 }
 
 func newTally() *tally {
-	return &tally{files: map[string]int{}, counts: map[string]int{}, reasons: map[string]int{}, warnings: map[string]int{}}
+	return &tally{files: map[string]int{}, counts: map[string]int{}, reasons: map[string]int{}, filesWith: map[string]int{}, warnings: map[string]int{}}
 }
 
 func (t *tally) add(format string, r corpusResult) {
@@ -161,14 +162,21 @@ func (t *tally) add(format string, r corpusResult) {
 	if r.doc == nil {
 		return
 	}
+	var inFile gofastcore.Hidden
 	for _, b := range r.doc.AllBlocks() {
 		if b.Hidden == 0 {
 			continue
 		}
+		inFile |= b.Hidden
 		for bit := gofastcore.Hidden(1); bit != 0; bit <<= 1 {
 			if b.Hidden&bit != 0 {
 				t.reasons[bit.String()]++
 			}
+		}
+	}
+	for bit := gofastcore.Hidden(1); bit != 0; bit <<= 1 {
+		if inFile&bit != 0 {
+			t.filesWith[bit.String()]++
 		}
 	}
 	for _, w := range r.doc.AllWarnings() {
@@ -192,7 +200,8 @@ func (t *tally) String() string {
 	}
 	line("files", t.files)
 	line("results", t.counts)
-	line("hidden blocks by reason", t.reasons)
+	line("blocks by reason", t.reasons)
+	line("files by reason", t.filesWith)
 	line("warnings by code", t.warnings)
 	return sb.String()
 }
