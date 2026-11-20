@@ -124,6 +124,9 @@ type reader struct {
 
 	outliers, storedOutliers int
 
+	cur  *para // the paragraph being read, if any
+	held int   // bytes held by the paragraphs cur stands in
+
 	seenObjects  map[string]bool
 	children     []*gofastcore.Document
 	controls     map[string]*control
@@ -610,9 +613,22 @@ func (r *reader) paragraph(c ctxt, heading bool, item *itemCtx, dst *[]gofastcor
 		bg = ps.Background
 	}
 	p := &para{space: true}
+	// A paragraph in a paragraph (a text box anchored in it, a note) has
+	// a buffer of its own while the outer one is held: both count.
+	outer, held := r.cur, r.held
+	if outer != nil {
+		r.held += len(outer.buf)
+	}
+	r.cur = p
 	r.inline(p, run{eff: ps, bg: bg}, s.Depth())
+	r.cur, r.held = outer, held
 
 	from, to := trimBounds(p.buf)
+	// White space trimmed off was written all the same (text:s can ask
+	// for much of it in few bytes), so it is charged too.
+	if waste := len(p.buf) - max(to-from, 0); waste > 0 && !r.stopped && !r.budget.Take(waste) {
+		r.stop(textCut)
+	}
 	b := gofastcore.Block{Kind: gofastcore.KindParagraph, Loc: gofastcore.Location{Anchor: anchor}}
 	if from < to {
 		b.Text = string(p.buf[from:to])

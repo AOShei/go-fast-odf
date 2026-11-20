@@ -22,6 +22,10 @@ var (
 // maxSpaces bounds what one text:s may ask for.
 const maxSpaces = 1 << 16
 
+// spaceRun is sliced for the spaces of text:s, so that a text:s with no
+// room left costs no allocation.
+var spaceRun = strings.Repeat(" ", maxSpaces)
+
 // reasons says why text with the given formatting cannot be seen.
 func reasons(ru *run) gofastcore.Hidden {
 	h := ru.hidden
@@ -81,12 +85,13 @@ func inlineStyle(o style.Resolved) gofastcore.Style {
 }
 
 // room reports whether n more bytes may go into the paragraph; the budget
-// left bounds what one paragraph may hold before it is charged.
+// left bounds what one paragraph, together with the paragraphs it stands
+// in (r.held), may hold before it is charged.
 func (r *reader) room(p *para, n int) bool {
 	if p.cut {
 		return false
 	}
-	if r.budget != nil && int64(len(p.buf)+n) > r.budget.Left() {
+	if r.budget != nil && int64(r.held+len(p.buf)+n) > r.budget.Left() {
 		p.cut = true
 		return false
 	}
@@ -238,7 +243,7 @@ func (r *reader) inlineText(p *para, ru run, local string) {
 		if v, err := strconv.Atoi(strings.TrimSpace(r.attr(ns.Text, "c"))); err == nil && v > 0 {
 			n = min(v, maxSpaces)
 		}
-		r.literal(p, &ru, strings.Repeat(" ", n), false)
+		r.literal(p, &ru, spaceRun[:n], false)
 		s.Skip()
 	case "tab":
 		r.literal(p, &ru, "\t", true)
