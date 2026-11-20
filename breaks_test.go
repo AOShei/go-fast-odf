@@ -85,3 +85,24 @@ thematic_break
 table |Cell
 paragraph End`)
 }
+
+// A "Horizontal Line" paragraph inside a comment or a tracked deletion is
+// not a break in the document: those notes keep only their text.
+func TestNoBreakFromCommentOrDeletion(t *testing.T) {
+	common := `<style:style style:name="Horizontal_20_Line" style:display-name="Horizontal Line" style:family="paragraph"/>`
+	hr := `<text:p text:style-name="Horizontal_20_Line"/>`
+	content := `<text:tracked-changes><text:changed-region text:id="c1"><text:deletion>` +
+		`<office:change-info><dc:creator>A</dc:creator></office:change-info>` +
+		`<text:p>Gone</text:p>` + hr + `</text:deletion></text:changed-region></text:tracked-changes>` +
+		`<text:p>Kept<text:change text:change-id="c1"/></text:p>` +
+		`<text:p>Commented<office:annotation><dc:creator>B</dc:creator><text:p>Remark</text:p>` + hr +
+		`</office:annotation></text:p>` +
+		`<text:p>End</text:p>`
+	data := textDoc(t, "", content, member{name: "styles.xml", data: stylesXML(common, "", "")})
+	doc := extract(t, data, nil)
+	for _, b := range body(t, doc) {
+		if b.Kind == gofastcore.KindThematicBreak {
+			t.Fatalf("a break came from a comment or a deletion: %+v", body(t, doc))
+		}
+	}
+}

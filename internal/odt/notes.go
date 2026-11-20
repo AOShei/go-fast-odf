@@ -23,9 +23,11 @@ type deletion struct {
 // hidden reasons. Blocks that are not text (pictures, notes inside them)
 // are returned as rest. What emit charged for the joined blocks is given
 // back: the text is charged again with the block it becomes. With
-// keepBreaks, thematic breaks are returned in rest, to stand after the
-// block; without it (a table cell, whose text is all it has) they are
-// dropped, as the empty paragraphs they were written as.
+// keepBreaks (footnotes and endnotes, which are part of the document's
+// text), thematic breaks are returned in rest, to stand after the block.
+// Without it they are dropped, as the empty paragraphs they were written
+// as: a table cell's text is all it has, and a break inside a comment,
+// a speaker's note or a tracked deletion is not a break in the document.
 func (r *reader) flatten(blocks []gofastcore.Block, keepBreaks bool) (text string, spans []gofastcore.Span, all gofastcore.Display, rest []gofastcore.Block) {
 	var buf []byte
 	var collected []gofastcore.Span
@@ -184,7 +186,7 @@ func (r *reader) annotation(c ctxt, dst *[]gofastcore.Block) {
 			r.blockAt(ctxt{hidden: c.hidden}, &body)
 		}
 	}
-	text, spans, all, rest := r.flatten(body, true)
+	text, spans, all, rest := r.flatten(body, false)
 	if text != "" {
 		attrs := map[string]string{gofastcore.AttrNoteType: gofastcore.NoteComment}
 		if author != "" {
@@ -279,7 +281,7 @@ func (r *reader) useDeletion(id string, dst *[]gofastcore.Block) {
 		return
 	}
 	r.usedDel[id] = true
-	text, spans, all, rest := r.flatten(d.blocks, true)
+	text, spans, all, rest := r.flatten(d.blocks, false)
 	d.blocks = nil
 	if text != "" {
 		attrs := map[string]string{gofastcore.AttrNoteType: gofastcore.NoteDeletion}
