@@ -325,9 +325,10 @@ func (r *reader) conditional(p *para, ru run) {
 		return
 	}
 	text := "IF " + cond + " THEN \"" + ifTrue + "\" ELSE \"" + ifFalse + "\""
-	// The field's instruction, with no reason.
+	// The field's instruction: stored data (a field code), with no reason.
 	b := gofastcore.Block{Kind: gofastcore.KindNote, Text: strings.TrimSpace(text),
-		Attrs: map[string]string{gofastcore.AttrNoteType: gofastcore.NoteField, gofastcore.AttrField: "conditional-text"}}
+		Attrs: map[string]string{gofastcore.AttrNoteType: gofastcore.NoteField, gofastcore.AttrField: "conditional-text",
+			gofastcore.AttrStored: gofastcore.StoredFieldCode}}
 	r.emit(&p.after, b)
 }
 

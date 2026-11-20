@@ -26,7 +26,7 @@ The format is decided from the file (a package's `mimetype` member or manifest r
 ```
 gofastodf [flags] file-or-directory...
   -format json|markdown|text   -parts 2-5   -images meta|data|none
-  -spans  -cells  -furniture  -stored  -part-markers  -children  -exclude-display[=reasons]
+  -spans  -cells  -furniture  -stored[=kinds]  -part-markers  -children  -exclude-display[=reasons]
   -max-cells N  -max-decoded-bytes N  -max-text-bytes N  -o file  -quiet
 ```
 
@@ -39,7 +39,7 @@ The render flags are the series' shared ones (`COMMAND_FLAGS.md` in the workspac
 | Flag | Meaning |
 |---|---|
 | `-furniture` | include running headers and footers |
-| `-stored` | include the stored part (data the file keeps but shows nowhere: user fields, named ranges, form fields no page places) |
+| `-stored[=kinds]` | in Markdown and text, include stored data (data the file keeps but shows nowhere): all of it, or with =kinds only those kinds (such as field_code, document_variable, defined_name). Alone, `=true` or `=all` mean every kind; `=false` or `=` none; kinds are separated by `,` or `+`; an unknown kind is an error listing the kinds (exit status 2) |
 | `-part-markers` | put a line before each part saying which part it is |
 | `-children` (default true) | include embedded documents, each after a line naming it (`[child 1: Object 1]`); `-children=false` leaves them out |
 | `-exclude-display[=reasons]` | leave out what the file declares not displayed: all of it (`-exclude-display`, `=true`, `=all`), or only those reasons (`=hidden`, `=no_ink`, `=hidden,no_ink`; comma or `+`); `=false` or `=` is off; any other value, `unknown` included, is an error |
@@ -61,7 +61,7 @@ One part of kind `body`, numbered 1, and, when the document stores values it nev
 | `office:annotation` | `note`, type `comment`, with `author` and `date` |
 | `text:tracked-changes` | the body is the text with every change accepted; each deletion is a `note` of type `deletion` where `text:change` marks it (or at the end if nothing marks it) |
 | `text:drop-down` | its value in the text; the values offered as a `note` of type `choices`, `field` its name |
-| `text:conditional-text` | its current value in the text; condition and both values as a `note` of type `field`, with no display reason |
+| `text:conditional-text` | its current value in the text; condition and both values as a `note` of type `field` with `stored=field_code` (stored data, no display reason; rendered only with `-stored` or `-stored=field_code`) |
 | fields (`text:date`, `text:page-number`, `text:author-name`, variables, ...) | their displayed value, in the text |
 | an empty paragraph of the body whose style (after inheritance) has a bottom border and no top, left or right border, or is LibreOffice's "Horizontal Line" style (`Horizontal_20_Line`) | `thematic_break`, `Origin` `inferred` (ODF has no rule element; this is what LibreOffice's AutoCorrect makes of `---`). Not when a paragraph beside it has the same border (a box), and never in table cells, list items, notes, comments, frames, headers or footers. Bordered paragraphs with text and literal `* * *` stay paragraphs |
 | `text:ruby` | base text, then the annotation in brackets |
@@ -124,7 +124,7 @@ Everything is extracted. `Display` (go-fast-core schema 0.2) on a block, span, t
 
 Not reported: a condition that would have to be evaluated (`text:display="condition"` without `text:is-hidden`; conditions are never evaluated), and `draw:display="printer"`.
 
-Colour, size, position and overlap are not judged: text colour is not compared with any background, font sizes and text scale are not read for display, and shapes over text are not looked at. Characters are kept as written, zero-width and bidirectional controls and tag characters included. Data OpenDocument files keep and never show (metadata, user field declarations, named ranges and expressions, database ranges, conditional-text conditions and their other value, formula strings, comments, tracked deletions, form values) is extracted as data with no reason; the `stored` part is left out by renderers unless `RenderOptions.Stored`.
+Colour, size, position and overlap are not judged: text colour is not compared with any background, font sizes and text scale are not read for display, and shapes over text are not looked at. Characters are kept as written, zero-width and bidirectional controls and tag characters included. Data OpenDocument files keep and never show (metadata, user field declarations, named ranges and expressions, database ranges, conditional-text conditions and their other value, formula strings, comments, tracked deletions, form values) is extracted as data with no reason; the `stored` part, and blocks marked `stored` elsewhere (conditional-text field codes), are left out by renderers unless `RenderOptions.Stored`, or `RenderOptions.StoredKinds` names their kind.
 
 ## Warnings
 
