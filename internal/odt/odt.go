@@ -63,18 +63,10 @@ var errStop = errors.New("odt: reading stopped")
 type ctxt struct {
 	hidden gofastcore.Display // reasons the file declares for all of it
 	list   *listCtx           // the list it is in, if any
-	// breaks says an empty bordered paragraph here may be a thematic
-	// break: the body of a text document and its sections, not cells,
-	// notes, frames, headers or footers.
+	// breaks says an empty "Horizontal Line" paragraph here is a
+	// thematic break: the body of a text document and its sections, not
+	// cells, notes, frames, headers or footers.
 	breaks bool
-}
-
-// pendingBreak is the last thematic break emitted, which the paragraph
-// after it takes back if the two share a border (a box, not a rule).
-type pendingBreak struct {
-	dst *[]gofastcore.Block
-	idx int
-	seq int
 }
 
 type reader struct {
@@ -114,10 +106,7 @@ type reader struct {
 	dbRanges    []dbRange // database ranges with a header row
 	delOrder    []string  // deletion ids in document order
 
-	seq     int    // counts block-level elements
-	prevSeq int    // the seq of the last paragraph where breaks may be
-	prevSig string // its border
-	pend    *pendingBreak
+	seq int // counts block-level elements
 
 	cur  *para // the paragraph being read, if any
 	held int   // bytes held by the paragraphs cur stands in
@@ -636,49 +625,16 @@ func (r *reader) paragraph(c ctxt, heading bool, item *itemCtx, dst *[]gofastcor
 	}
 }
 
-// thematicBreak decides whether a paragraph of the body is a rule between
-// topics. ODF has no element for one; LibreOffice's AutoCorrect turns
-// "---" and Enter into an empty paragraph with only a bottom border (in
-// older versions, one in the style "Horizontal Line"). Such a paragraph
-// is a break, origin inferred, unless the paragraph before or after it
-// has the same border: paragraphs that share a border make a box.
+// thematicBreak emits a break where the file declares one. ODF has no
+// element for a rule; LibreOffice writes an HTML <hr> as an empty
+// paragraph in its built-in style "Horizontal Line", so an empty paragraph
+// in that style (or one inheriting from it) is a native break. An empty
+// paragraph with only a bottom border is a border, not a declared break.
 func (r *reader) thematicBreak(ps style.Resolved, empty bool, dst *[]gofastcore.Block) {
-	var sig string
-	bordered := false
-	for i, b := range ps.Border {
-		if b == "" {
-			b = "none"
-		}
-		bordered = bordered || b != "none"
-		if i > 0 {
-			sig += "|"
-		}
-		sig += b
+	if empty && ps.HorizontalLine {
+		r.emit(dst, gofastcore.Block{Kind: gofastcore.KindThematicBreak, Origin: gofastcore.OriginNative})
 	}
-	if !bordered {
-		sig = ""
-	}
-	adjacent := sig != "" && r.prevSeq == r.seq-1 && r.prevSig == sig
-	if adjacent && r.pend != nil && r.pend.seq == r.prevSeq {
-		// The break before was the edge of a box after all.
-		d := r.pend.dst
-		if r.pend.idx < len(*d) && (*d)[r.pend.idx].Kind == gofastcore.KindThematicBreak {
-			*d = append((*d)[:r.pend.idx], (*d)[r.pend.idx+1:]...)
-			r.budget.Return(gofastcore.BlockCost)
-		}
-		r.pend = nil
-	}
-	rule := ps.HorizontalLine || bordered && ps.Border[style.Bottom] != "" && ps.Border[style.Bottom] != "none" &&
-		none(ps.Border[style.Top]) && none(ps.Border[style.Left]) && none(ps.Border[style.Right])
-	if empty && rule && !adjacent {
-		if r.emit(dst, gofastcore.Block{Kind: gofastcore.KindThematicBreak, Origin: gofastcore.OriginInferred}) {
-			r.pend = &pendingBreak{dst: dst, idx: len(*dst) - 1, seq: r.seq}
-		}
-	}
-	r.prevSeq, r.prevSig = r.seq, sig
 }
-
-func none(b string) bool { return b == "" || b == "none" }
 
 // whole adds reasons that apply to all of a block, taking them off its
 // spans, where they would say they apply only there.
