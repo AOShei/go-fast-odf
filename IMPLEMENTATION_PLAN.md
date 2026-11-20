@@ -61,7 +61,7 @@ execs/s per target.
 | odp: slides as parts, `Name` = title, frames in reading order, speaker notes as `note`, hidden slides, footer placeholders as `footer` | done |
 | Flat XML (.fodt, .fods, .fodp): one XML stream, `office:binary-data` images | done |
 | `cmd/gofastodf` printing JSON, Markdown or text like gofastooxml | done |
-| ods: header rows of regions (print titles), declared database ranges as native tables | todo |
+| ods: header rows of regions (print titles), declared database ranges as native tables | done (phase 7) |
 | ods: cells' formulas without cached values (`odf.formula_no_value`, one per sheet with the count, like ooxml's) | done (phase 7) |
 | odp: master-page text, tables in frames checked with a real slide test | todo |
 | Embedded objects (`draw:object` formulas as `formula`, charts, `draw:object-ole` as children) | done (run 3) |

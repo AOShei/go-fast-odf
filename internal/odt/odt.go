@@ -111,6 +111,7 @@ type reader struct {
 	unread      map[string]int
 	unreadOrder []string
 	validations map[string]validation
+	dbRanges    []dbRange // database ranges with a header row
 	delOrder    []string // deletion ids in document order
 
 	seq     int    // counts block-level elements

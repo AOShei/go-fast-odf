@@ -35,3 +35,43 @@ func TestFormulaNoValue(t *testing.T) {
 		t.Errorf("%d formulas in cells", n)
 	}
 }
+
+// Header rows come from what the file declares: table:table-header-rows
+// (print titles) and database ranges that contain a header.
+func TestSheetHeaderRows(t *testing.T) {
+	row := func(a, b string) string { return `<table:table-row>` + cell(a) + cell(b) + `</table:table-row>` }
+	gap := `<table:table-row><table:table-cell/></table:table-row>`
+	body := `<office:spreadsheet>` +
+		`<table:table table:name="Print">` + gap +
+		`<table:table-header-rows>` + row("H1", "H2") + `</table:table-header-rows>` + row("a", "b") + row("c", "d") + `</table:table>` +
+		`<table:table table:name="My DB">` + row("Name", "Age") + row("Ann", "3") +
+		gap + row("x", "y") + row("z", "w") + gap + row("p", "q") + row("r", "s") + `</table:table>` +
+		`<table:table table:name="Plain">` + row("Bold", "Head") + row("1", "2") + `</table:table>` +
+		`<table:database-ranges>` +
+		`<table:database-range table:name="D1" table:target-range-address="'My DB'.A1:'My DB'.B2"/>` +
+		`<table:database-range table:name="D2" table:contains-header="false" table:target-range-address="'My DB'.A4:.B5"/>` +
+		`<table:database-range table:name="D3" table:target-range-address="'My DB'.A7:'My DB'.B9"/>` +
+		`</table:database-ranges></office:spreadsheet>`
+	doc := extract(t, bodyDoc(t, sheetMIME, "", body), nil)
+	want := [][]int{{1}, {1, 0, 0}, {0}}
+	for i := range want {
+		p := doc.Parts[i]
+		var got []int
+		for _, b := range p.Blocks {
+			if b.Kind == gofastcore.KindTable {
+				got = append(got, b.Table.HeaderRows)
+			}
+		}
+		if len(got) != len(want[i]) {
+			t.Fatalf("sheet %d: header rows %v, want %v", i, got, want[i])
+		}
+		for j := range got {
+			if got[j] != want[i][j] {
+				t.Errorf("sheet %d: header rows %v, want %v", i, got, want[i])
+			}
+		}
+	}
+	if err := doc.Validate(); err != nil {
+		t.Error(err)
+	}
+}

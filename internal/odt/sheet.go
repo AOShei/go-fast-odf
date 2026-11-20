@@ -69,6 +69,15 @@ type sheetIn struct {
 	choices map[string]*[4]int // validation name -> bounds of the cells that use it
 	order   []string
 	noValue int64 // formula cells with no stored result
+	// The rows of table:table-header-rows (print titles), from and to
+	// inclusive; hdrTo < hdrFrom when there are none.
+	hdrFrom, hdrTo int
+}
+
+// dbRange is a database range the file declares to contain a header row.
+type dbRange struct {
+	sheet string // as clean.Name writes it
+	ref   string // A1 notation, as rangeRef writes it
 }
 
 // placed is a note that stands at a cell.
@@ -135,6 +144,7 @@ func (r *reader) spreadsheet(serr error) []gofastcore.Part {
 		r.finish(&p, "workbook")
 		parts = append(parts, p)
 	}
+	r.dbHeaders(parts)
 	// A limit that stopped the reading is said on the last part read.
 	if r.limitMsg != "" {
 		last := &parts[len(parts)-1]
@@ -142,6 +152,93 @@ func (r *reader) spreadsheet(serr error) []gofastcore.Part {
 		r.limitMsg = ""
 	}
 	return parts
+}
+
+// dbHeaders gives a header row to each region that is exactly a database
+// range declared to contain one: the file declares that table, so it is
+// native. Database ranges come after the sheets, so this is done last.
+func (r *reader) dbHeaders(parts []gofastcore.Part) {
+	if len(r.dbRanges) == 0 {
+		return
+	}
+	set := make(map[dbRange]bool, len(r.dbRanges))
+	for _, d := range r.dbRanges {
+		set[d] = true
+	}
+	for i := range parts {
+		p := &parts[i]
+		for j := range p.Blocks {
+			b := &p.Blocks[j]
+			if b.Kind != gofastcore.KindTable || b.Table == nil || b.Origin != gofastcore.OriginInferred ||
+				len(b.Table.Rows) < 2 || !set[dbRange{sheet: p.Name, ref: b.Loc.Range}] {
+				continue
+			}
+			b.Origin = gofastcore.OriginNative
+			if b.Table.HeaderRows == 0 {
+				b.Table.HeaderRows = 1
+			}
+		}
+	}
+}
+
+// parseDBRange reads a cell range address such as 'My Sheet'.A1:.C3 or
+// $Data.$A$1:$Data.$C$3. Both ends must be on one sheet.
+func parseDBRange(addr string) (dbRange, bool) {
+	addr = strings.TrimSpace(addr)
+	split := -1
+	quoted := false
+	for i := 0; i < len(addr); i++ {
+		switch {
+		case addr[i] == '\'':
+			quoted = !quoted
+		case addr[i] == ':' && !quoted:
+			if split >= 0 {
+				return dbRange{}, false
+			}
+			split = i
+		}
+	}
+	if split < 0 {
+		return dbRange{}, false
+	}
+	s0, r0, c0, ok0 := cellAddr(addr[:split])
+	s1, r1, c1, ok1 := cellAddr(addr[split+1:])
+	if !ok0 || !ok1 || s0 == "" || s1 != "" && s1 != s0 || r1 < r0 || c1 < c0 {
+		return dbRange{}, false
+	}
+	return dbRange{sheet: clean.Name(s0), ref: rangeRef(r0, c0, r1, c1)}, true
+}
+
+// cellAddr reads one end of a range address: a sheet name, plain or in
+// single quotes (a quote doubled inside), a dot, and a cell reference.
+func cellAddr(a string) (sheet string, row, col int, ok bool) {
+	a = strings.TrimPrefix(a, "$")
+	dot := strings.LastIndexByte(a, '.')
+	if dot < 0 {
+		return "", 0, 0, false
+	}
+	sheet, ref := a[:dot], strings.ReplaceAll(a[dot+1:], "$", "")
+	if len(sheet) >= 2 && sheet[0] == '\'' && sheet[len(sheet)-1] == '\'' {
+		sheet = strings.ReplaceAll(sheet[1:len(sheet)-1], "''", "'")
+	}
+	i := 0
+	for i < len(ref) && i < 4 && ref[i] >= 'A' && ref[i] <= 'Z' {
+		col = col*26 + int(ref[i]-'A'+1)
+		i++
+	}
+	if i == 0 || i == len(ref) || len(ref)-i > 8 {
+		return "", 0, 0, false
+	}
+	for _, c := range ref[i:] {
+		if c < '0' || c > '9' {
+			return "", 0, 0, false
+		}
+		row = row*10 + int(c-'0')
+	}
+	if row < 1 || col-1 >= maxSheetCols || row-1 >= maxSheetRows {
+		return "", 0, 0, false
+	}
+	return sheet, row - 1, col - 1, true
 }
 
 // readValidations reads table:content-validations: the lists of values
@@ -260,6 +357,13 @@ func (r *reader) namedRanges(sheet string) {
 		}
 		if string(s.Local()) == "database-range" {
 			b.Attrs["kind"] = "database_range"
+			// table:contains-header is true unless the file says
+			// otherwise.
+			if r.attr(ns.Table, "contains-header") != "false" && len(r.dbRanges) < 1<<14 {
+				if d, ok := parseDBRange(addr); ok {
+					r.dbRanges = append(r.dbRanges, d)
+				}
+			}
 		}
 		if !r.emit(&r.userVars, b) {
 			return
@@ -277,7 +381,7 @@ func (r *reader) sheet(n int) gofastcore.Part {
 	if r.set.Box(r.sc, "table", r.attr(ns.Table, "style-name")).BoxHidden {
 		part.Display = gofastcore.DisplayHidden
 	}
-	sh := &sheetIn{choices: map[string]*[4]int{}}
+	sh := &sheetIn{choices: map[string]*[4]int{}, hdrFrom: 0, hdrTo: -1}
 	row := 0
 	r.sheetBody(sh, &row, name)
 	part.Blocks = r.regions(sh, &part)
@@ -319,8 +423,16 @@ func (r *reader) sheetBody(sh *sheetIn, row *int, sheetName string) {
 			s.Skip()
 		case space == ns.Table && local == "table-row":
 			r.sheetRow(sh, row)
+		case space == ns.Table && local == "table-header-rows":
+			// Rows repeated at the top of every printed page: the
+			// sheet's print titles. The first such group is kept.
+			from := *row
+			r.sheetBody(sh, row, sheetName)
+			if sh.hdrTo < sh.hdrFrom && *row > from {
+				sh.hdrFrom, sh.hdrTo = from, *row-1
+			}
 		case space == ns.Table && (local == "table-columns" || local == "table-header-columns" || local == "table-column-group" ||
-			local == "table-rows" || local == "table-header-rows" || local == "table-row-group"):
+			local == "table-rows" || local == "table-row-group"):
 			r.sheetBody(sh, row, sheetName)
 		case space == ns.Table && local == "named-expressions":
 			r.namedRanges(sheetName)
@@ -755,6 +867,13 @@ func (r *reader) sheetTable(sh *sheetIn, reg region, out *[]gofastcore.Block) bo
 		}
 	}
 	t.Merges = noOverlap(t.Merges, h, w)
+	// Print titles that are the first rows of the region (rows above it
+	// in the titles are empty) are its header rows.
+	if sh.hdrFrom <= reg.r0 && reg.r0 <= sh.hdrTo {
+		if n := sh.hdrTo - reg.r0 + 1; n < h {
+			t.HeaderRows = n
+		}
+	}
 	for _, rs := range sh.rows {
 		if a, b := max(rs.from, reg.r0), min(rs.to, reg.r1); a <= b {
 			t.Display = append(t.Display, gofastcore.DisplayCells{Row: a - reg.r0, Col: 0, RowSpan: b - a + 1, ColSpan: w, Display: rs.hidden})

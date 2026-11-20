@@ -12,6 +12,10 @@ been released yet.
   no stored result (no `office:*value` attribute, no text) are counted,
   one warning per sheet, worded as go-fast-ooxml's
   `ooxml.formula_no_value`. The formulas stay in `Table.Cells`.
+- ods header rows: `table:table-header-rows` (print titles) give a
+  region's `HeaderRows` when they are its first rows; a region exactly
+  equal to a declared `table:database-range` with a header (the default)
+  gets `HeaderRows: 1` and `Origin` `native` (was `inferred`).
 
 ### Changed: decryption limits (branch `review-2`)
 
