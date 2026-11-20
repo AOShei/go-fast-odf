@@ -62,7 +62,7 @@ func TestSpreadsheet(t *testing.T) {
 		t.Errorf("sheet %+v", data)
 	}
 	check(t, data.Blocks, `
-table{invisible+low_contrast} |Name|When|Secret |Ann|2026-03-04|3 |Bob|14:30:00|white
+table{hidden} |Name|When|Secret |Ann|2026-03-04|3 |Bob|14:30:00|white
 table |Total| |Yes|
 note pick one
 note Yes/No
@@ -95,7 +95,8 @@ note =.$Lists.A1:A3`)
 	for _, h := range b[0].Table.Display {
 		hid[strings.Join([]string{string(rune('0' + h.Row)), string(rune('0' + h.Col)), string(rune('0' + h.RowSpan)), string(rune('0' + h.ColSpan))}, ",")] = true
 	}
-	if !hid["2,0,1,3"] || !hid["0,2,3,1"] || !hid["2,2,1,1"] {
+	// The white cell (a former low-contrast case) is not a region.
+	if !hid["2,0,1,3"] || !hid["0,2,3,1"] || len(hid) != 2 {
 		t.Errorf("hidden regions %+v", b[0].Table.Display)
 	}
 	lists := doc.Parts[1]
@@ -256,7 +257,7 @@ func TestFlatFiles(t *testing.T) {
 	}
 	check(t, body(t, doc), `
 header Head
-paragraph{invisible} Body hid
+paragraph{hidden} Body hid
 note c
 image dot`)
 	img := body(t, doc)[3].Image

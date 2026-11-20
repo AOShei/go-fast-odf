@@ -258,7 +258,7 @@ func TestFieldsAndStored(t *testing.T) {
 	doc := extract(t, data, nil)
 	check(t, body(t, doc), `
 paragraph Page 3 by Ann.
-paragraph{invisible} Sethidden value.
+paragraph{hidden} Sethidden value.
 paragraph Pick red
 note red/blue
 paragraph no
@@ -293,7 +293,7 @@ func TestHeadersFooters(t *testing.T) {
 	data := textDoc(t, "", `<text:p>Body</text:p>`, member{name: "styles.xml", data: stylesXML("", "", master)})
 	check(t, body(t, extract(t, data, nil)), `
 header Running head
-header{invisible} Left head
+header{hidden} Left head
 paragraph Body
 footer Page 1`)
 }
