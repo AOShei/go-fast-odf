@@ -11,6 +11,10 @@ been released yet.
 - Argon2id is capped at 256 MiB of memory per key (was 1 GiB), memory
   times passes at 1 GiB per key (was 4 GiB) and 2 GiB per package (was
   8 GiB). LibreOffice's 64 MiB, 3 passes, 4 lanes is well within.
+- An encrypted member that the archive also compresses is inflated no
+  further than the size of the package; past it, `ErrMalformed`, before
+  any decryption. Stored encrypted members, which writers produce, are
+  read as before.
 
 ### Added: decryption (branch `phase-6-decryption`)
 

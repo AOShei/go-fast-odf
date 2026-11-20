@@ -123,6 +123,43 @@ func TestArgonCaps(t *testing.T) {
 	}
 }
 
+// An encrypted member that the archive also compresses is read no further
+// than the size of the package: a deflate bomb there is damage, found
+// without inflating it.
+func TestEncryptedDeflateBomb(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	for _, m := range []struct {
+		name   string
+		data   []byte
+		method uint16
+	}{
+		{"mimetype", []byte("application/vnd.oasis.opendocument.text"), zip.Store},
+		{"content.xml", make([]byte, 16<<20), zip.Deflate},
+		{"META-INF/manifest.xml", []byte(manifestHead + cbcData(`<manifest:key-derivation manifest:key-derivation-name="PBKDF2" manifest:iteration-count="10" manifest:salt="AAAA" manifest:key-size="32"/>`) + `</manifest:file-entry></manifest:manifest>`), zip.Store},
+	} {
+		w, _ := zw.CreateHeader(&zip.FileHeader{Name: m.name, Method: m.method})
+		w.Write(m.data)
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	data := buf.Bytes()
+	const budget = 1 << 30
+	p, err := Open(bytes.NewReader(data), int64(len(data)), Limits{MaxDecodedBytes: budget, MaxMembers: 16})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.SetPassword("pw")
+	_, err = p.Open("content.xml")
+	if !errors.Is(err, ErrDamaged) {
+		t.Errorf("deflate bomb: %v, want ErrDamaged", err)
+	}
+	if read := budget - p.Remaining(); read > int64(len(data))+64<<10 {
+		t.Errorf("read %d bytes of a %d-byte package", read, len(data))
+	}
+}
+
 // pbkdf2SHA1 gives what crypto/pbkdf2 gives, for key sizes of one block
 // and of several.
 func TestPBKDF2MatchesStdlib(t *testing.T) {

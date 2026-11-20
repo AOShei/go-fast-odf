@@ -328,18 +328,25 @@ func (p *Package) openEncrypted(name string) (io.ReadCloser, error) {
 		return nil, fmt.Errorf("%w: %s: %v", ErrDamaged, clean.Label(name), err)
 	}
 	var src io.Reader = rc
+	limit := p.Remaining() + int64(f.CompressedSize64)
 	if f.Method != 0 {
 		// Compressed by the archive as well (not what a writer does):
-		// what comes out is charged like any decompressed data.
+		// what comes out is charged like any decompressed data, and
+		// ciphertext, which does not compress, is no larger than the
+		// package that holds it.
 		src = &budgetReader{rc: rc, p: p}
+		limit = min(p.Remaining(), p.size)
 	}
-	ct, err := io.ReadAll(io.LimitReader(src, p.Remaining()+int64(f.CompressedSize64)+1))
+	ct, err := io.ReadAll(io.LimitReader(src, limit+1))
 	rc.Close()
 	if err != nil {
 		if errors.Is(err, ErrBudget) {
 			return nil, err
 		}
 		return nil, fmt.Errorf("%w: %s: %v", ErrDamaged, clean.Label(name), err)
+	}
+	if f.Method != 0 && int64(len(ct)) > p.size {
+		return nil, fmt.Errorf("%w: %s: compressed encrypted data inflates past the %d bytes of the package", ErrDamaged, clean.Label(name), p.size)
 	}
 	pt, err := p.decrypt(name, ct)
 	if err != nil {
