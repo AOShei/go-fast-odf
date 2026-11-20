@@ -98,7 +98,9 @@ func TestRenderFlags(t *testing.T) {
 	dir := t.TempDir()
 	a := filepath.Join(dir, "a.odt")
 	writeODT(t, a, `<text:user-field-decls><text:user-field-decl office:value-type="string" office:string-value="Kept value" text:name="Client"/></text:user-field-decls>`+
-		`<text:p>Shown.</text:p><text:section text:name="S" text:display="none"><text:p>Secret.</text:p></text:section>`)
+		`<text:p>Shown.</text:p>`+
+		`<text:p><text:conditional-text text:condition="ooow:x==1" text:string-value-if-true="yes" text:string-value-if-false="nope" text:current-value="false">nope</text:conditional-text></text:p>`+
+		`<text:section text:name="S" text:display="none"><text:p>Secret.</text:p></text:section>`)
 	render := func(args ...string) string {
 		t.Helper()
 		var out, errs bytes.Buffer
@@ -107,8 +109,41 @@ func TestRenderFlags(t *testing.T) {
 		}
 		return out.String()
 	}
-	if got := render(); !strings.Contains(got, "Shown.") || !strings.Contains(got, "Secret.") || strings.Contains(got, "Kept value") {
+	const cond = "ooow:x==1"
+	if got := render(); !strings.Contains(got, "Shown.") || !strings.Contains(got, "Secret.") || strings.Contains(got, "Kept value") ||
+		!strings.Contains(got, "nope") || strings.Contains(got, cond) {
 		t.Errorf("no flags: %q", got)
+	}
+	// Every row of the -stored table: alone, =true, =all for every kind;
+	// =false and = for none; =kinds (comma or +) for those kinds only.
+	for _, c := range []struct {
+		args       []string
+		vars, code bool
+	}{
+		{[]string{"-stored"}, true, true},
+		{[]string{"-stored=true"}, true, true},
+		{[]string{"-stored=all"}, true, true},
+		{[]string{"-stored=false"}, false, false},
+		{[]string{"-stored="}, false, false},
+		{[]string{"-stored=field_code"}, false, true},
+		{[]string{"-stored=document_variable"}, true, false},
+		{[]string{"-stored=field_code,document_variable"}, true, true},
+		{[]string{"-stored=field_code+document_variable"}, true, true},
+	} {
+		got := render(c.args...)
+		if strings.Contains(got, "Kept value") != c.vars || strings.Contains(got, cond) != c.code || !strings.Contains(got, "nope") {
+			t.Errorf("%v: %q", c.args, got)
+		}
+	}
+	var sf storedFlag
+	if err := sf.Set("field_code,field_code"); err != nil || len(sf.kinds) != 1 {
+		t.Errorf("repeated kind: %v %v", sf.kinds, err)
+	}
+	for _, v := range []string{"nonsense", "field_code,nonsense", ","} {
+		var out, errs bytes.Buffer
+		if code := run(context.Background(), []string{"-stored=" + v, a}, &out, &errs); code != 2 || !strings.Contains(errs.String(), "the kinds are "+strings.Join(gofastcore.StoredKindNames, ", ")) {
+			t.Errorf("-stored=%s: exit %d, %q", v, code, errs.String())
+		}
 	}
 	for _, args := range [][]string{{"-exclude-display"}, {"-exclude-display=hidden"}, {"-exclude-display=all"}} {
 		if got := render(args...); !strings.Contains(got, "Shown.") || strings.Contains(got, "Secret.") {

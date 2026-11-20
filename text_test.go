@@ -270,6 +270,9 @@ note IF ooow:x==1 THEN "yes" ELSE "no"`)
 	if b[3].Attrs[gofastcore.AttrNoteType] != gofastcore.NoteChoices || b[3].Attrs[gofastcore.AttrField] != "Colour" {
 		t.Errorf("choices %v", b[3].Attrs)
 	}
+	if b[5].Attrs[gofastcore.AttrNoteType] != gofastcore.NoteField || b[5].Attrs[gofastcore.AttrStored] != gofastcore.StoredFieldCode {
+		t.Errorf("field code %v", b[5].Attrs)
+	}
 	if len(doc.Parts) != 2 || doc.Parts[1].Kind != gofastcore.PartStored {
 		t.Fatalf("no stored part")
 	}
