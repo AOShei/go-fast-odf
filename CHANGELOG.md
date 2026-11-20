@@ -17,8 +17,13 @@ been released yet.
   equal to a declared `table:database-range` with a header (the default)
   gets `HeaderRows: 1` and `Origin` `native` (was `inferred`).
 - odp master-page text: shapes of a used `style:master-page` that are not
-  placeholders are given once per master, on its first shown slide,
-  before the notes, as `header` (upper half) or `footer` (lower half).
+  placeholders are given on every slide that uses the master and shows
+  its objects (`presentation:background-objects-visible`, followed
+  through the drawing-page style's parents), before the notes, as
+  `header` (upper half) or `footer` (lower half), as go-fast-ooxml does.
+  A hidden slide's copy is hidden with it. The copies are bounded at
+  2^20 blocks over a presentation, each charged to the text budget; a
+  slide past the bound gets `limit.exceeded`.
 
 ### Changed: decryption limits (branch `review-2`)
 

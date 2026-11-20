@@ -63,8 +63,9 @@ execs/s per target.
 | `cmd/gofastodf` printing JSON, Markdown or text like gofastooxml | done |
 | ods: header rows of regions (print titles), declared database ranges as native tables | done (phase 7) |
 | ods: cells' formulas without cached values (`odf.formula_no_value`, one per sheet with the count, like ooxml's) | done (phase 7) |
-| odp: master-page text (once per master, non-placeholder shapes as header/footer) | done (phase 7) |
-| odp: tables in frames checked with a real slide test; `presentation:background-objects-visible` | todo |
+| odp: master-page text (non-placeholder shapes as header/footer, on every slide that shows the master's objects, bounded as in ooxml) | done (phase 7) |
+| odp: `presentation:background-objects-visible` | done (phase 7) |
+| odp: tables in frames checked with a real slide test | todo |
 | Embedded objects (`draw:object` formulas as `formula`, charts, `draw:object-ole` as children) | done (run 3) |
 | Form controls and their values | done (run 3) |
 | Thematic breaks (core df335f0) for empty bottom-bordered paragraphs | done (run 3) |
