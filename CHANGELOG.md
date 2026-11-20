@@ -6,6 +6,17 @@ been released yet.
 
 ## [Unreleased]
 
+### Changed: no inferred thematic break (branch `no-inferred-break`)
+
+- A `thematic_break` is emitted only where the file declares one: an
+  empty paragraph of the body in LibreOffice's "Horizontal Line" style
+  (or one inheriting from it), now with `Origin` `native` (was
+  `inferred`).
+- Removed (R7): an empty paragraph with only a bottom border no longer
+  becomes a break; it is a border and gives no block. The adjacency
+  check that took a break back when the next paragraph shared its
+  border, and the paragraph-border reading only it used, are gone.
+
 ### Changed: stored kinds (branch `stored-kinds`)
 
 - Pins go-fast-core `ebecf3c` (`RenderOptions.StoredKinds`,

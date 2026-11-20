@@ -1,6 +1,6 @@
 // Package style reads the styles of an OpenDocument file (styles.xml and
 // the automatic styles of each stream) as far as the extractor needs them:
-// outline levels, list styles, paragraph borders, what the file declares
+// outline levels, list styles, the "Horizontal Line" style, what the file declares
 // about display (text:display="none", a font colour with no opacity,
 // hidden sheets, slides and layers), and emphasis (weight, slant, lines,
 // position). Colours are not compared and sizes not judged.
@@ -66,41 +66,6 @@ type Style struct {
 	boxHidden Tri // On: the sheet or slide is hidden
 	noBgObj   Tri // On: the slide does not show its master's objects
 	name      string
-	border    [4]string // top, bottom, left, right as written; "" unset
-}
-
-// Sides of a paragraph's border, as indexes of Resolved.Border.
-const (
-	Top = iota
-	Bottom
-	Left
-	Right
-)
-
-// readBorders reads fo:border and fo:border-top/-bottom/-left/-right.
-func readBorders(s *xmlscan.Scanner, st *Style) {
-	if v, ok := s.Attr(ns.FO, "border"); ok {
-		for i := range st.border {
-			st.border[i] = borderValue(v)
-		}
-	}
-	for i, side := range [4]string{"border-top", "border-bottom", "border-left", "border-right"} {
-		if v, ok := s.Attr(ns.FO, side); ok {
-			st.border[i] = borderValue(v)
-		}
-	}
-}
-
-// borderValue gives a border as written, "none" for none.
-func borderValue(v []byte) string {
-	b := strings.TrimSpace(string(v))
-	if b == "" || b == "none" || strings.HasPrefix(b, "0pt") || strings.HasPrefix(b, "0cm") || strings.HasPrefix(b, "0in") {
-		return "none"
-	}
-	if len(b) > 128 {
-		b = b[:128]
-	}
-	return b
 }
 
 // Resolved is a style with everything it inherits applied.
@@ -127,9 +92,6 @@ type Resolved struct {
 	// does not show the objects of its master page
 	// (presentation:background-objects-visible="false").
 	NoMasterObjects bool
-	// Border is the paragraph's border on each side (Top, Bottom, Left,
-	// Right) as written, "" or "none" for none.
-	Border [4]string
 	// HorizontalLine says the style is, or inherits from, LibreOffice's
 	// "Horizontal Line" paragraph style.
 	HorizontalLine bool
@@ -313,9 +275,6 @@ func (set *Set) Read(s *xmlscan.Scanner, sc Scope) error {
 				}
 			case "paragraph-properties", "table-properties", "drawing-page-properties":
 				if cur != nil {
-					if local == "paragraph-properties" {
-						readBorders(s, cur)
-					}
 					// A hidden sheet, a hidden slide.
 					if v, ok := s.Attr(ns.Table, "display"); ok && local == "table-properties" {
 						cur.boxHidden = Off
@@ -640,11 +599,6 @@ func apply(r *Resolved, st *Style) {
 	}
 	if st.master != "" {
 		r.Master = st.master
-	}
-	for i, b := range st.border {
-		if b != "" {
-			r.Border[i] = b
-		}
 	}
 	if st.family == "paragraph" && (st.name == "Horizontal_20_Line" || st.name == "Horizontal Line") {
 		r.HorizontalLine = true
