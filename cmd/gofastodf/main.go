@@ -98,10 +98,11 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		quiet     = flags.Bool("quiet", false, "say nothing about files that were read; failures are still reported")
 		version   = flags.Bool("version", false, "print the version and exit")
 		furniture = flags.Bool("furniture", false, "in Markdown and text, include running headers and footers")
-		markers   = flags.Bool("part-markers", false, "in Markdown and text, mark where each part begins")
+		stored    = flags.Bool("stored", false, "in Markdown and text, include the stored part (data the file keeps but shows nowhere: user variables, named ranges, form fields no page places)")
+		markers   = flags.Bool("part-markers", false, "in Markdown and text, put a line before each part saying which part it is")
 	)
 	var exclude displayFlag
-	flags.Var(&exclude, "exclude-display", "in Markdown and text, leave out text the file declares not displayed: all of it, or with =reasons only for the reasons named, hidden or no_ink (JSON always has everything, with its display reasons)")
+	flags.Var(&exclude, "exclude-display", "in Markdown and text, leave out what the file declares not displayed: all of it, or with =reasons only those reasons (hidden, no_ink); JSON always has everything")
 	flags.Usage = func() {
 		fmt.Fprintln(stderr, "usage: gofastodf [flags] file-or-directory...")
 		fmt.Fprintln(stderr, "Extracts OpenDocument files. A directory stands for the OpenDocument files in it and below it.")
@@ -201,7 +202,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	}
 	w := bufio.NewWriter(out)
 	defer w.Flush()
-	render := &gofastcore.RenderOptions{Furniture: *furniture, PartMarkers: *markers, ExcludeDisplay: exclude.reasons}
+	render := &gofastcore.RenderOptions{Furniture: *furniture, Stored: *stored, PartMarkers: *markers, ExcludeDisplay: exclude.reasons}
 
 	written := 0
 	for _, path := range inputs {
