@@ -26,11 +26,11 @@ The format is decided from the file (a package's `mimetype` member or manifest r
 ```
 gofastodf [flags] file-or-directory...
   -format json|markdown|text   -parts 2-5   -images meta|data|none
-  -spans  -cells  -furniture  -part-markers  -exclude-hidden[=reasons]
+  -spans  -cells  -furniture  -part-markers  -exclude-display[=hidden,no_ink]
   -max-cells N  -max-decoded-bytes N  -max-text-bytes N  -o file  -quiet
 ```
 
-Documents go to standard output; warnings worth a person's attention (hidden text, errors) go to standard error; the exit status is 1 if any input could not be read.
+Documents go to standard output; warnings of severity error go to standard error; the exit status is 1 if any input could not be read.
 
 ## How a text document maps
 
@@ -49,7 +49,7 @@ One part of kind `body`, numbered 1, and, when the document stores values it nev
 | `office:annotation` | `note`, type `comment`, with `author` and `date` |
 | `text:tracked-changes` | the body is the text with every change accepted; each deletion is a `note` of type `deletion` where `text:change` marks it (or at the end if nothing marks it) |
 | `text:drop-down` | its value in the text; the values offered as a `note` of type `choices`, `field` its name |
-| `text:conditional-text` | its current value in the text; condition and both values as a `note` of type `field`, not flagged (an outlier by `gofastcore.UnshownOutlier` is) |
+| `text:conditional-text` | its current value in the text; condition and both values as a `note` of type `field`, with no display reason |
 | fields (`text:date`, `text:page-number`, `text:author-name`, variables, ...) | their displayed value, in the text |
 | an empty paragraph of the body whose style (after inheritance) has a bottom border and no top, left or right border, or is LibreOffice's "Horizontal Line" style (`Horizontal_20_Line`) | `thematic_break`, `Origin` `inferred` (ODF has no rule element; this is what LibreOffice's AutoCorrect makes of `---`). Not when a paragraph beside it has the same border (a box), and never in table cells, list items, notes, comments, frames, headers or footers. Bordered paragraphs with text and literal `* * *` stay paragraphs |
 | `text:ruby` | base text, then the annotation in brackets |
@@ -63,14 +63,14 @@ One part of kind `body`, numbered 1, and, when the document stores values it nev
 
 ## How a spreadsheet maps
 
-One part of kind `sheet` per `table:table`, `Name` the sheet name, `Hidden` `invisible` when its table style says `table:display="false"`.
+One part of kind `sheet` per `table:table`, `Name` the sheet name, `Display` `hidden` when its table style says `table:display="false"`.
 
-- **Cells** are read with the text reader (spans, hidden text, links, comments). Repeated rows and columns are counted, not stored, while empty; repeated cells with content are written out, bounded by `MaxCells` and the text budget. Coordinates are capped at 65,536 columns and 16 million rows. While a sheet is read its cells are held at about 48 bytes each before its tables are made, and that is counted against what is left of `MaxTextBytes`, so a sheet holds at most about 5 million cells at the default limit (a few bytes of repeated cells cannot fill memory).
+- **Cells** are read with the text reader (spans, display reasons, links, comments). Repeated rows and columns are counted, not stored, while empty; repeated cells with content are written out, bounded by `MaxCells` and the text budget. Coordinates are capped at 65,536 columns and 16 million rows. While a sheet is read its cells are held at about 48 bytes each before its tables are made, and that is counted against what is left of `MaxTextBytes`, so a sheet holds at most about 5 million cells at the default limit (a few bytes of repeated cells cannot fill memory).
 - **Used regions** are tables, `Origin` `inferred`, `Loc.Range` in A1 notation (`A1:C3`): rows with cells that follow one another (or that a merged cell spans) form a band, and within a band touching columns with cells form a region. A region whose rectangle is more than four times its cells (plus 1,024) is written as one table per run of cells in a row, with `odf.region_split`.
 - **Text** is what the cell displays (its paragraphs joined with `\n`); a cell with a value and no paragraph shows the value. **Dates and times stored as values are written in ISO 8601** (`2026-03-04`, `14:30:00` from `PT14H30M00S`), whatever the display, as core asks.
 - **Merged cells** (`number-columns-spanned`, `number-rows-spanned`) are `Merges`; overlapping merges after the first are dropped.
 - With `Options.Cells`, `Table.Cells` has each cell's formula (`table:formula` as written, never evaluated), and its type and stored value where the text does not show the value (`number`, `date`, `bool`). With `Options.Spans`, a cell's link is its `href`.
-- **Hidden**: collapsed or filtered rows and columns are `HiddenCells` regions; a cell's style is checked for `display:none`, a colour near the cell's background, and tiny text.
+- **Display**: collapsed or filtered rows and columns are `DisplayCells` regions with `hidden`; a cell's style is read for `text:display="none"` and for `loext:opacity` of 0.
 - **Comments** (`office:annotation` in a cell) are `note` blocks of type `comment` with `Loc.Range` the cell.
 - **Validation lists** (`cell-content-is-in-list`) are `note` blocks of type `choices` after the tables, `Loc.Range` the bounding range of the cells that use the validation, `field` its name. A list of values gives one per line; a list taken from cells gives `=` and the reference as the file writes it.
 - **Named ranges, named expressions and database ranges** (workbook-wide and sheet-local, the latter as `Sheet!name`) go to the `stored` part as `name: address` paragraphs with `stored=defined_name`; database ranges also have `Attrs["kind"]="database_range"`.
@@ -78,36 +78,43 @@ One part of kind `sheet` per `table:table`, `Name` the sheet name, `Hidden` `inv
 
 ## How a presentation maps
 
-One part of kind `slide` per `draw:page`. `Name` is the text of the title frame (`presentation:class="title"`), else the page's `draw:name`. `Hidden` `invisible` when the page's drawing-page style says `presentation:visibility="hidden"`.
+One part of kind `slide` per `draw:page`. `Name` is the text of the title frame (`presentation:class="title"`), else the page's `draw:name`. `Display` `hidden` when the page's drawing-page style says `presentation:visibility="hidden"`.
 
 - Frames, shapes and groups are put in reading order: the title first, then from top to bottom (`svg:y`) and, at one height, left to right (`svg:x`); an item with no position keeps the place of the one before it.
 - The title's paragraphs are `heading` level 1. Footer, date-time and page-number placeholders are `footer` blocks, header placeholders `header` blocks. Other text is paragraphs and list items as in a text document.
 - **Speaker notes** (`presentation:notes`) are one `note` block of type `speaker` at the end of the slide.
-- Text is compared with the frame's fill (graphic or presentation style), else the slide's background, else its master page's background, else white. Text on a picture, gradient or hatch fill is not compared.
 
 ## Flat files
 
 A flat file is one XML document (`office:document`) holding metadata, styles, master pages and body. It is read like a package whose streams are that document. Pictures held in it (`office:binary-data`) are decoded (up to 64 MiB of base64 each, charged to `MaxDecodedBytes`); their `Image.ID` is `inline-` and the first 16 hex digits of the SHA-256 of their bytes, so equal pictures have equal IDs; their MIME type and size come from decoding PNG, JPEG and GIF headers.
 
-## Hidden text
+## What the file declares
 
-`HiddenChecked` is `invisible+tiny+low_contrast+invisible_chars`. All checks are cheap and always run; `Options.DeepHidden` changes nothing.
+Everything is extracted. `Display` (go-fast-core schema 0.2) on a block, span, table region or part records only what the file itself states about display; a block with no `Display` says nothing about whether a reader can see it. Following the file's own style inheritance to find a property counts as reading it.
 
-The flag marks a hiding mechanism applied to content that would otherwise be seen, as go-fast-core's "What earns a flag" asks. **Data OpenDocument files routinely keep and never show is extracted and not flagged**: metadata, user field declarations (`text:user-field-decls`), named ranges and expressions and database ranges, conditional-text conditions and their other value, formula strings (`Table.Cells`), comments, tracked deletions, form values (also of hidden controls and password fields, and of controls placed nowhere). The `stored` part is not hidden as a whole, and renderers leave it out unless `RenderOptions.Stored`. **Outliers** are flagged by core's shared rule, `gofastcore.UnshownOutlier`: one such item holding more than 30 words or more than 300 characters other than white space (which catches text without spaces, such as Chinese or Japanese, and encoded payloads such as base64) is flagged `invisible`, and its part carries `text.unshown_outlier`. No kind of item is exempted: none trips the character rule in clean files of the corpus. LibreOffice's hidden copies of sheets of other files that formulas refer to (sheets named `'address'#Sheet`) are routine and not flagged; other hidden sheets are. A clean, ordinary file comes out with no hidden flag and no `text.hidden` warning (tested).
+`hidden` is set for:
 
-| Reason | When |
-|---|---|
-| `invisible` | `text:display="none"` in a text, paragraph or inherited style; `text:hidden-paragraph`, `text:hidden-text` and sections with `text:display="condition"` that the file records as hidden (`text:is-hidden="true"`) or whose condition is literally true (conditions are not evaluated, and a conditional section is not flagged for having one); a section with `text:display="none"`; fields with `text:display="none"`; collapsed or filtered table rows and columns; hidden sheets and slides; frames and shapes with `draw:display="none"` or on a layer with `draw:display="none"` (`printer`, shown only in print, is not flagged); a header or footer switched off (`style:display="false"`); an outlier of routine unshown data (below) |
-| `tiny` | font size under 2 pt after relative sizes and character scaling (`style:text-scale`) |
-| `low_contrast` | `fo:color` against the nearest background: the characters' own background, else the paragraph's, else the table cell's, section's or frame's, else the page's (the first master page's layout), else white |
-| `transparent` | LibreOffice's `loext:opacity` of 0 on a definite font colour (found, not listed as checked). LibreOffice writes `loext:opacity="0%"` beside the automatic colour in its default styles, where it means nothing; it is ignored there, and a colour given without opacity is opaque |
-| `invisible_chars` | core's scan, on every block |
+- `text:display="none"` on a text, paragraph or table-cell style, directly or inherited through `style:parent-style-name`
+- `text:display="none"` on a field
+- a section with `text:display="none"`
+- `text:hidden-paragraph`, `text:hidden-text` and sections with `text:display="condition"` that the file records as hidden (`text:is-hidden="true"`)
+- table rows and columns with `table:visibility` `collapse` or `filter`
+- a sheet whose table style has `table:display="false"`, LibreOffice's cached copies of linked sheets included
+- a slide whose drawing-page style has `presentation:visibility="hidden"`
+- a frame or shape with `draw:display="none"`, or on a layer with `draw:display="none"`
+- a header or footer switched off with `style:display="false"`
 
-Limits of the checks: text whose colour is the program's choice (`style:use-window-font-color`) is not compared; the page background is that of the first master page; frames and shapes drawn over text are not compared (`occluded` is not checked); Asian and complex-script font sizes are not read. In a spreadsheet the cell style's colour and size are judged for the cell as a whole, and a paragraph style inside the cell is judged on its own; a cell's text is not compared with pictures or shapes over it. On a slide, text is compared with its own frame's fill and the slide's background, not with pictures or shapes behind the frame.
+`no_ink` is set for:
+
+- `loext:opacity` of 0 on a definite `fo:color` (LibreOffice writes `loext:opacity="0%"` beside the automatic font colour in its default styles; there it describes no colour and is not read as no ink)
+
+Not reported: a condition that would have to be evaluated (`text:display="condition"` without `text:is-hidden`; conditions are never evaluated), and `draw:display="printer"`.
+
+Colour, size, position and overlap are not judged: text colour is not compared with any background, font sizes and text scale are not read for display, and shapes over text are not looked at. Characters are kept as written, zero-width and bidirectional controls and tag characters included. Data OpenDocument files keep and never show (metadata, user field declarations, named ranges and expressions, database ranges, conditional-text conditions and their other value, formula strings, comments, tracked deletions, form values) is extracted as data with no reason; the `stored` part is left out by renderers unless `RenderOptions.Stored`.
 
 ## Warnings
 
-Shared codes raised: `part.failed`, `part.no_text`, `text.hidden`, `text.unshown_outlier`, `text.tracked_changes`, `structure.heading_level_clamped`, `input.repaired`, `input.ambiguous`, `input.active_content` (Basic or other scripts in the package, event handlers, links that run macros, applets; none of it is read or run), `input.external_reference` (linked pictures, linked sections, plug-ins, an auto-reload address; nothing is fetched), `limit.exceeded`.
+Shared codes raised: `part.failed`, `part.no_text`, `text.tracked_changes`, `structure.heading_level_clamped`, `input.repaired`, `input.ambiguous`, `input.active_content` (Basic or other scripts in the package, event handlers, links that run macros, applets; none of it is read or run), `input.external_reference` (linked pictures, linked sections, plug-ins, an auto-reload address; nothing is fetched), `limit.exceeded`.
 
 Codes of this library:
 
@@ -129,7 +136,7 @@ Every limit of `gofastcore.Options.Limits` applies. `MaxDecodedBytes` (default 2
 
 ## Corpus test
 
-`TestCorpus` runs every odt, ods, odp and flat file of the public corpus (`GOFAST_CORPUS`, else `../.testdata/corpus`; skipped when absent) under `dev/` and `heldout/`, each with a 10 s limit, 32 MiB of text and 512 MiB of decompression, and logs a tally per set (files, results and errors by kind, hidden blocks by reason, warnings by code). It fails on a panic, a Validate failure or a timeout. With `-v` it also lists each hidden flag in `dev/` files with an excerpt. Held-out files are counted, never shown.
+`TestCorpus` runs every odt, ods, odp and flat file of the public corpus (`GOFAST_CORPUS`, else `../.testdata/corpus`; skipped when absent) under `dev/` and `heldout/`, each with a 10 s limit, 32 MiB of text and 512 MiB of decompression, and logs a tally per set (files, results and errors by kind, blocks and files by display reason, warnings by code). It fails on a panic, a Validate failure or a timeout. With `-v` it also lists each display reason in `dev/` files with an excerpt. Held-out files are counted, never shown.
 
 ## Fuzzing
 
@@ -147,12 +154,12 @@ In every kind of document, `draw:object` and `draw:object-ole` in a frame are re
 - **Charts** (a sub-document with `chart:chart`) give a `caption` block with the chart's title, then a `table` block of the data the chart keeps in its own table (header rows as `HeaderRows`), with `Attrs`: `role=chart`, `chart` the chart class (`bar`, `line`, ...), `x_axis` and `y_axis` the axis titles, `name` the frame's name.
 - When a formula or chart became blocks, the frame's replacement picture (`ObjectReplacements/Object N`) is not given: it is a drawing of the same thing.
 - **Other sub-documents** (a text document or spreadsheet embedded in another) are packed as a package of their own (members stored, `mimetype` first, the media type from the manifest or else from its body element) and handed to `Options.ExtractChild`; **OLE objects** (`draw:object-ole`, a member such as `Object 4`) are handed on as stored, with the manifest's media type. Each appears in `Document.Children`, extracted or listed. The decompression budget is settled with the shared budget before and after each. Linked objects (an address outside the package) are counted in `input.external_reference` and not fetched.
-- **Form controls** (`office:forms`, placed by `draw:control`) give a paragraph where they stand: label and value as `label: value` (a check box's value is `checked`), `Attrs["field"]` the control's name and `Attrs["control"]` its kind; a list box or combo box also gives a `choices` note of its options. Controls that no `draw:control` places go to the `stored` part with `stored=form_field`. Form values are routine data: the values of hidden controls, password fields and unplaced controls are flagged `invisible` only as outliers (`gofastcore.UnshownOutlier`).
+- **Form controls** (`office:forms`, placed by `draw:control`) give a paragraph where they stand: label and value as `label: value` (a check box's value is `checked`), `Attrs["field"]` the control's name and `Attrs["control"]` its kind; a list box or combo box also gives a `choices` note of its options. Controls that no `draw:control` places go to the `stored` part with `stored=form_field`. Form values are data: the values of hidden controls, password fields and unplaced controls are extracted with no display reason.
 
 ## Not read (yet)
 
-Drawings (`.odg`), charts, formulas and databases as documents in their own right; decryption; documents held whole inside a flat file's `draw:object`; change-tracked insertions are not marked in the text; text placed off a slide is not flagged (`off_page` is not checked); master-page text of slides; the OpenOffice 1.x formats (`.sxw`).
+Drawings (`.odg`), charts, formulas and databases as documents in their own right; decryption; documents held whole inside a flat file's `draw:object`; change-tracked insertions are not marked in the text; master-page text of slides; the OpenOffice 1.x formats (`.sxw`).
 
 ## Provenance
 
-The XML scanner, text cleaning, hidden-span settling and zip recovery are copied from go-fast-ooxml (same author and licence); see `NOTICE`.
+The XML scanner, text cleaning, display-span settling and zip recovery are copied from go-fast-ooxml (same author and licence); see `NOTICE`.

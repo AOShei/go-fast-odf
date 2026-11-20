@@ -9,7 +9,7 @@ the same MIT License. Each copied file says so in its first lines:
                                (go-fast-ooxml internal/xmlscan)
   internal/clean/clean.go, clean_test.go
                                (go-fast-ooxml internal/clean)
-  internal/hidden/hidden.go    (go-fast-ooxml internal/hidden)
+  internal/display/display.go  (go-fast-ooxml internal/hidden)
   internal/odpkg/recover.go    (go-fast-ooxml internal/opc/recover.go)
 
 No third-party data tables are included. List numbering formats (1, a, A,
