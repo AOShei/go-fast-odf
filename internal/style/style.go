@@ -64,6 +64,7 @@ type Style struct {
 	hasList   bool
 	master    string
 	boxHidden Tri // On: the sheet or slide is hidden
+	noBgObj   Tri // On: the slide does not show its master's objects
 	name      string
 	border    [4]string // top, bottom, left, right as written; "" unset
 }
@@ -122,6 +123,10 @@ type Resolved struct {
 	// BoxHidden says a table style hides its sheet (table:display="false")
 	// or a drawing-page style its slide (presentation:visibility="hidden").
 	BoxHidden bool
+	// NoMasterObjects says a drawing-page style declares that its slide
+	// does not show the objects of its master page
+	// (presentation:background-objects-visible="false").
+	NoMasterObjects bool
 	// Border is the paragraph's border on each side (Top, Bottom, Left,
 	// Right) as written, "" or "none" for none.
 	Border [4]string
@@ -316,6 +321,12 @@ func (set *Set) Read(s *xmlscan.Scanner, sc Scope) error {
 						cur.boxHidden = Off
 						if string(v) == "false" {
 							cur.boxHidden = On
+						}
+					}
+					if v, ok := s.Attr(ns.Presentation, "background-objects-visible"); ok && local == "drawing-page-properties" {
+						cur.noBgObj = Off
+						if string(v) == "false" {
+							cur.noBgObj = On
 						}
 					}
 					if v, ok := s.Attr(ns.Presentation, "visibility"); ok && local == "drawing-page-properties" {
@@ -640,6 +651,9 @@ func apply(r *Resolved, st *Style) {
 	}
 	if st.boxHidden != Unset {
 		r.BoxHidden = st.boxHidden == On
+	}
+	if st.noBgObj != Unset {
+		r.NoMasterObjects = st.noBgObj == On
 	}
 }
 

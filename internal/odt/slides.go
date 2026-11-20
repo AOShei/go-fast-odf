@@ -71,8 +71,7 @@ type item struct {
 
 // slideUse is what the master pages need to know of a slide read.
 type slideUse struct {
-	master  string // draw:master-page-name
-	hidden  bool   // the slide is declared hidden
+	master  string // draw:master-page-name; "" if its objects are not shown
 	notesAt int    // where the slide's notes begin in its blocks
 }
 
@@ -85,6 +84,9 @@ func (r *reader) slide(n int) (gofastcore.Part, slideUse) {
 	page := r.set.Box(r.sc, "drawing-page", r.attr(ns.Draw, "style-name"))
 	if page.BoxHidden {
 		part.Display = gofastcore.DisplayHidden
+	}
+	if page.NoMasterObjects {
+		use.master = "" // the slide does not show its master's objects
 	}
 	c := ctxt{}
 	var items []item
@@ -180,7 +182,7 @@ func (r *reader) slide(n int) (gofastcore.Part, slideUse) {
 		}
 		part.Blocks = append(part.Blocks, it.blocks...)
 	}
-	use.notesAt, use.hidden = len(part.Blocks), part.Display != 0
+	use.notesAt = len(part.Blocks)
 	part.Blocks = append(part.Blocks, notes...)
 	if part.Name == "" {
 		part.Name = name
@@ -193,45 +195,92 @@ func (r *reader) slide(n int) (gofastcore.Part, slideUse) {
 // 16:9 slide (15.75 cm), for a master whose page layout gives none.
 const defaultSlideHeight = 15.75 / 2.54 * 72
 
+// maxRepeated bounds the blocks that slides take from their master
+// pages over a presentation, as go-fast-ooxml bounds what slides take
+// from their layouts and masters. A variable so that tests can lower it.
+var maxRepeated int64 = 1 << 20
+
+// SetMaxRepeatedForTest sets maxRepeated and returns a function that
+// restores it. For tests only; not safe while documents are read.
+func SetMaxRepeatedForTest(n int64) (restore func()) {
+	old := maxRepeated
+	maxRepeated = n
+	return func() { maxRepeated = old }
+}
+
 // addMasters reads the text the slides' master pages show of their own
-// and gives it once per master, on the first slide that uses the master
-// and is not hidden (or the first, if all are), before that slide's
-// notes. Placeholders on a master are not content.
+// and gives it on every slide that uses the master and shows its objects
+// (presentation:background-objects-visible), before that slide's notes.
+// A hidden slide's copy is hidden with the slide. Placeholders on a
+// master are not content.
+//
+// The master's text is read, and charged to the text budget, once; each
+// further copy is charged again, and the copies over the presentation
+// are bounded by maxRepeated: a slide past that says so.
 func (r *reader) addMasters(parts []gofastcore.Part, uses []slideUse) {
-	first := map[string]int{}
-	var order []string
+	want := map[string]int{}
 	for i, u := range uses {
-		if u.master == "" {
-			continue
-		}
-		j, ok := first[u.master]
-		if !ok {
-			order = append(order, u.master)
-		}
-		if !ok || uses[j].hidden && !u.hidden {
-			first[u.master] = i
+		if _, ok := want[u.master]; u.master != "" && !ok {
+			want[u.master] = i
 		}
 	}
-	if len(order) == 0 {
+	if len(want) == 0 {
 		return
 	}
 	// The masters are in another stream (or earlier in a flat file):
 	// read with a scanner of their own.
 	saved := r.s
 	r.s = xmlscan.Scanner{}
-	masters := r.slideMasters(&parts[len(parts)-1], first)
+	masters := r.slideMasters(&parts[len(parts)-1], want)
 	r.s = saved
-	for _, name := range order {
-		blocks := masters[name]
-		if len(blocks) == 0 {
+	costs := map[string]int{}
+	for name, blocks := range masters {
+		for i := range blocks {
+			costs[name] += int(cost(&blocks[i]))
+		}
+	}
+	left := maxRepeated
+	full := false
+	for i, u := range uses {
+		blocks := masters[u.master]
+		if len(blocks) == 0 || i >= len(parts) {
 			continue
 		}
-		i := first[name]
 		p := &parts[i]
-		p.Blocks = slices.Insert(p.Blocks, min(uses[i].notesAt, len(p.Blocks)), blocks...)
+		switch n := int64(len(blocks)); {
+		case full:
+			continue
+		case want[u.master] == i:
+			// The first copy was charged when the master was read.
+		case left < n:
+			p.Warn(gofastcore.SeverityError, gofastcore.WarnLimitExceeded, "the text of the slide's master page is left out: the slides of the presentation repeat more of it than is kept")
+			continue
+		case !r.budget.Take(costs[u.master]):
+			p.Warn(gofastcore.SeverityError, gofastcore.WarnLimitExceeded, textCut)
+			r.stopped, full = true, true
+			continue
+		default:
+			left -= n
+		}
+		p.Blocks = slices.Insert(p.Blocks, min(u.notesAt, len(p.Blocks)), repeated(blocks)...)
 		p.Warnings = slices.DeleteFunc(p.Warnings, func(w gofastcore.Warning) bool { return w.Code == gofastcore.WarnPartNoText })
 		p.Finish()
 	}
+}
+
+// repeated copies blocks a master puts on a slide. A picture gets an
+// Image of its own on each slide, so that its bytes can be left with the
+// first block that shows it and taken from the others.
+func repeated(from []gofastcore.Block) []gofastcore.Block {
+	out := make([]gofastcore.Block, len(from))
+	for i, b := range from {
+		if b.Image != nil {
+			img := *b.Image
+			b.Image = &img
+		}
+		out[i] = b
+	}
+	return out
 }
 
 // slideMasters reads the master pages named in want from styles.xml,

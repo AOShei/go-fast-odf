@@ -1,10 +1,12 @@
 package gofastodf
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
 	"github.com/AOShei/go-fast-core"
+	"github.com/AOShei/go-fast-odf/internal/odt"
 )
 
 // Formulas stored without a result show nothing; one warning per sheet
@@ -36,12 +38,14 @@ func TestFormulaNoValue(t *testing.T) {
 	}
 }
 
-// Text a master page shows of its own is given once per master, on the
-// first slide that uses it (the first shown one); its placeholders are
-// not content.
+// Text a master page shows of its own is given on every slide that uses
+// it and shows its objects; a hidden slide's copy is hidden with it; its
+// placeholders are not content.
 func TestMasterPageText(t *testing.T) {
 	auto := `<style:page-layout style:name="PM1"><style:page-layout-properties fo:page-width="28cm" fo:page-height="20cm"/></style:page-layout>`
-	hidden := `<style:style style:name="dp-hidden" style:family="drawing-page"><style:drawing-page-properties presentation:visibility="hidden"/></style:style>`
+	hidden := `<style:style style:name="dp-hidden" style:family="drawing-page"><style:drawing-page-properties presentation:visibility="hidden"/></style:style>` +
+		`<style:style style:name="dp-bare" style:family="drawing-page" style:parent-style-name="NoObjects"/>`
+	common := `<style:style style:name="NoObjects" style:family="drawing-page"><style:drawing-page-properties presentation:background-objects-visible="false"/></style:style>`
 	frame := func(attrs, text string) string {
 		return `<draw:frame ` + attrs + `><draw:text-box><text:p>` + text + `</text:p></draw:text-box></draw:frame>`
 	}
@@ -59,14 +63,17 @@ func TestMasterPageText(t *testing.T) {
 		return `<draw:page draw:master-page-name="Default" ` + attrs + `>` + frame(`svg:y="5cm"`, text) +
 			`<presentation:notes>` + frame(`presentation:class="notes"`, "notes "+text) + `</presentation:notes></draw:page>`
 	}
-	body := `<office:presentation>` + page(`draw:style-name="dp-hidden"`, "one") + page("", "two") + page("", "three") + `</office:presentation>`
-	data := bodyDoc(t, slideMIME, hidden, body, member{name: "styles.xml", data: stylesXML("", auto, master)})
+	body := `<office:presentation>` + page(`draw:style-name="dp-hidden"`, "one") + page("", "two") + page("", "three") +
+		page(`draw:style-name="dp-bare"`, "four") + `</office:presentation>`
+	data := bodyDoc(t, slideMIME, hidden, body, member{name: "styles.xml", data: stylesXML(common, auto, master)})
 	doc := extract(t, data, nil)
-	if len(doc.Parts) != 3 {
+	if len(doc.Parts) != 4 {
 		t.Fatalf("%d parts", len(doc.Parts))
 	}
 	check(t, doc.Parts[0].Blocks, `
 paragraph{hidden} one
+header{hidden} Confidential
+footer{hidden} ACME Ltd
 note{hidden} notes one`)
 	check(t, doc.Parts[1].Blocks, `
 paragraph two
@@ -75,7 +82,43 @@ footer ACME Ltd
 note notes two`)
 	check(t, doc.Parts[2].Blocks, `
 paragraph three
+header Confidential
+footer ACME Ltd
 note notes three`)
+	check(t, doc.Parts[3].Blocks, `
+paragraph four
+note notes four`)
+	if err := doc.Validate(); err != nil {
+		t.Error(err)
+	}
+}
+
+// The copies of a master's text over the slides are bounded: a long
+// master and many slides stay within the cap, and the slides past it
+// say so.
+func TestMasterPageTextCap(t *testing.T) {
+	defer odt.SetMaxRepeatedForTest(500)()
+	var master strings.Builder
+	master.WriteString(`<style:master-page style:name="M">`)
+	for i := range 40 {
+		fmt.Fprintf(&master, `<draw:frame svg:y="1cm"><draw:text-box><text:p>m%d</text:p></draw:text-box></draw:frame>`, i)
+	}
+	master.WriteString(`</style:master-page>`)
+	body := `<office:presentation>` + strings.Repeat(`<draw:page draw:master-page-name="M"/>`, 100) + `</office:presentation>`
+	doc := extract(t, bodyDoc(t, slideMIME, "", body, member{name: "styles.xml", data: stylesXML("", "", master.String())}), nil)
+	blocks, warned := 0, 0
+	for _, p := range doc.Parts {
+		blocks += len(p.Blocks)
+		for _, w := range p.Warnings {
+			if w.Code == gofastcore.WarnLimitExceeded {
+				warned++
+			}
+		}
+	}
+	// The first copy, then 500/40 = 12 more.
+	if blocks != 40*13 || warned != 100-13 {
+		t.Errorf("%d blocks, %d slides warned", blocks, warned)
+	}
 	if err := doc.Validate(); err != nil {
 		t.Error(err)
 	}
