@@ -20,9 +20,12 @@ import (
 
 // Color is a colour as a style gives it.
 type Color struct {
-	Set     bool // the style says something
-	None    bool // transparent, or no fill: whatever is behind shows
-	Auto    bool // the program chooses (window font colour)
+	Set  bool // the style says something
+	None bool // transparent, or no fill: whatever is behind shows
+	Auto bool // the program chooses (window font colour)
+	// Varied: an opaque fill that is not one colour (a picture, a
+	// gradient, a hatch). Text on it is not compared with it.
+	Varied  bool
 	R, G, B uint8
 }
 
@@ -196,6 +199,7 @@ type Set struct {
 	defaults   map[string]*Style
 	outline    *ListStyle
 	masters    map[string]string // master page -> page layout
+	masterBG   map[string]string // master page -> its drawing-page style
 	first      string            // the first master page
 	layouts    map[string]Color  // page layout -> background
 	cache      map[cacheKey]Resolved
@@ -226,6 +230,7 @@ func New() *Set {
 		auto:     [2]scope{{styles: map[key]*Style{}, lists: map[string]*ListStyle{}}, {styles: map[key]*Style{}, lists: map[string]*ListStyle{}}},
 		defaults: map[string]*Style{},
 		masters:  map[string]string{},
+		masterBG: map[string]string{},
 		layouts:  map[string]Color{},
 		cache:    map[cacheKey]Resolved{},
 	}
@@ -356,6 +361,9 @@ func (set *Set) Read(s *xmlscan.Scanner, sc Scope) error {
 				name := string(attr(s, ns.Style, "name"))
 				if len(set.masters) < maxStyles {
 					set.masters[name] = string(attr(s, ns.Style, "page-layout-name"))
+					if dp := attr(s, ns.Draw, "style-name"); len(dp) > 0 {
+						set.masterBG[name] = string(dp)
+					}
 				}
 				if set.first == "" {
 					set.first = name
@@ -531,6 +539,8 @@ func background(s *xmlscan.Scanner) Color {
 		if v, ok := s.Attr(ns.Draw, "fill-color"); ok {
 			return ParseColor(string(v))
 		}
+	case "bitmap", "gradient", "hatch":
+		return Color{Set: true, Varied: true}
 	}
 	return Color{}
 }
@@ -737,6 +747,24 @@ func (set *Set) List(sc Scope, name string) *ListStyle {
 
 // Outline returns the outline numbering style, or nil.
 func (set *Set) Outline() *ListStyle { return set.outline }
+
+// SlideBackground returns the background a master page of a presentation
+// gives its slides (the fill of its drawing-page style, in styles.xml),
+// of the first master page if the name is "" or unknown. It is not Known
+// if the master page gives none.
+func (set *Set) SlideBackground(master string) Color {
+	dp, ok := set.masterBG[master]
+	if !ok {
+		if _, named := set.masters[master]; named {
+			return Color{}
+		}
+		dp = set.masterBG[set.first]
+	}
+	if dp == "" {
+		return Color{}
+	}
+	return set.Box(Styles, "drawing-page", dp).Background
+}
 
 // PageBackground returns the background of the pages of the named master
 // page, or of the first master page if the name is "" or unknown. A page

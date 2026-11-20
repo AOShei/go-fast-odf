@@ -73,6 +73,10 @@ func (r *reader) slide(n int) gofastcore.Part {
 	}
 	bg := page.Background
 	if !bg.Known() {
+		// Most slides show the background of their master page.
+		bg = r.set.SlideBackground(r.attr(ns.Draw, "master-page-name"))
+	}
+	if !bg.Known() {
 		bg = style.White
 	}
 	c := ctxt{bg: bg}

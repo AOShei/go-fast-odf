@@ -83,7 +83,7 @@ One part of kind `slide` per `draw:page`. `Name` is the text of the title frame 
 - Frames, shapes and groups are put in reading order: the title first, then from top to bottom (`svg:y`) and, at one height, left to right (`svg:x`); an item with no position keeps the place of the one before it.
 - The title's paragraphs are `heading` level 1. Footer, date-time and page-number placeholders are `footer` blocks, header placeholders `header` blocks. Other text is paragraphs and list items as in a text document.
 - **Speaker notes** (`presentation:notes`) are one `note` block of type `speaker` at the end of the slide.
-- Text is compared with the frame's fill (graphic or presentation style), else the slide's background, else white.
+- Text is compared with the frame's fill (graphic or presentation style), else the slide's background, else its master page's background, else white. Text on a picture, gradient or hatch fill is not compared.
 
 ## Flat files
 

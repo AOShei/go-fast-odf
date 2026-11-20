@@ -46,7 +46,9 @@ func reasons(ru *run) gofastcore.Hidden {
 	if size < gofastcore.HiddenTinySize {
 		h |= gofastcore.HiddenTiny
 	}
-	if e.Color.Known() {
+	// Text on a picture, a gradient or a hatch is not compared: no one
+	// colour stands behind it.
+	if e.Color.Known() && !(ru.bg.Varied && !e.Highlight.Known()) {
 		behind := ru.bg
 		if e.Highlight.Known() {
 			behind = e.Highlight
