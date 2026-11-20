@@ -122,6 +122,8 @@ type reader struct {
 	prevSig string // its border
 	pend    *pendingBreak
 
+	outliers, storedOutliers int
+
 	seenObjects  map[string]bool
 	children     []*gofastcore.Document
 	controls     map[string]*control
@@ -185,7 +187,10 @@ func Read(ctx context.Context, pkg *odpkg.Package, set *style.Set, opts *gofastc
 	r.unplacedControls()
 	res.Children = r.children
 	if len(r.userVars) > 0 {
-		st := &gofastcore.Part{Kind: gofastcore.PartStored, Number: len(res.Parts) + 1, Hidden: gofastcore.HiddenInvisible, Blocks: r.userVars}
+		// Not hidden as a whole: what files keep and never show is
+		// routine. Its outliers are flagged block by block.
+		st := &gofastcore.Part{Kind: gofastcore.PartStored, Number: len(res.Parts) + 1, Blocks: r.userVars}
+		outlierWarning(st, r.storedOutliers)
 		st.MarkHidden()
 		res.Stored = st
 	}
@@ -245,9 +250,43 @@ func (r *reader) textBody(serr error) gofastcore.Part {
 	return part
 }
 
+// MaxUnshownWords is how many words one item of data the file keeps and
+// never shows (a user field, a named range, a condition, a form value
+// placed nowhere) may hold before it is an outlier. Such data is routine
+// and is not flagged hidden; an item above this is out of proportion for
+// its kind, and is flagged invisible with WarnUnshownOutlier.
+const MaxUnshownWords = 30
+
+// WarnUnshownOutlier: an item of data the file keeps and never shows
+// holds more than MaxUnshownWords words; it is flagged invisible.
+const WarnUnshownOutlier = "odf.unshown_outlier"
+
+// unshown flags b invisible if it is an outlier, and counts it for the
+// warning of the part it goes to (stored says the stored part).
+func (r *reader) unshown(b *gofastcore.Block, stored bool) {
+	if len(strings.Fields(b.Text)) <= MaxUnshownWords {
+		return
+	}
+	b.Hidden |= gofastcore.HiddenInvisible
+	if stored {
+		r.storedOutliers++
+	} else {
+		r.outliers++
+	}
+}
+
+func outlierWarning(part *gofastcore.Part, n int) {
+	if n > 0 {
+		part.Warn(gofastcore.SeverityWarning, WarnUnshownOutlier,
+			fmt.Sprintf("%d items of data the file keeps and never shows hold more than %d words each", n, MaxUnshownWords))
+	}
+}
+
 // finish adds the warnings a part's reading gave rise to and marks its
 // hidden text.
 func (r *reader) finish(part *gofastcore.Part, what string) {
+	outlierWarning(part, r.outliers)
+	r.outliers = 0
 	if r.stopped && r.limitMsg != "" {
 		part.Warn(gofastcore.SeverityError, gofastcore.WarnLimitExceeded, r.limitMsg)
 		r.limitMsg = "" // said once, on the part where it happened
@@ -411,9 +450,12 @@ func (r *reader) section(c ctxt, dst *[]gofastcore.Block) {
 	case "none":
 		c.hidden |= gofastcore.HiddenInvisible
 	case "condition":
-		// Shown or not as a condition decides; conditions are not
-		// evaluated, so the section is taken as one a reader may not see.
-		c.hidden |= gofastcore.HiddenInvisible
+		// Hidden when its condition holds. Conditions are not evaluated:
+		// the section is flagged where the file records it hidden or the
+		// condition is literally true, as for hidden paragraphs.
+		if hiddenNow(r.attr(ns.Text, "is-hidden"), r.attr(ns.Text, "condition")) {
+			c.hidden |= gofastcore.HiddenInvisible
+		}
 	}
 	if bg := r.set.Box(r.sc, "section", r.attr(ns.Text, "style-name")).Background; bg.Known() {
 		c.bg = bg
@@ -504,6 +546,7 @@ func (r *reader) userFields() {
 		if name != "" {
 			b.Attrs[gofastcore.AttrField] = name
 		}
+		r.unshown(&b, true)
 		if !r.emit(&r.userVars, b) {
 			return
 		}

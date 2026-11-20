@@ -49,7 +49,7 @@ One part of kind `body`, numbered 1, and, when the document stores values it nev
 | `office:annotation` | `note`, type `comment`, with `author` and `date` |
 | `text:tracked-changes` | the body is the text with every change accepted; each deletion is a `note` of type `deletion` where `text:change` marks it (or at the end if nothing marks it) |
 | `text:drop-down` | its value in the text; the values offered as a `note` of type `choices`, `field` its name |
-| `text:conditional-text` | its current value in the text; condition and both values as a `note` of type `field`, flagged `invisible` |
+| `text:conditional-text` | its current value in the text; condition and both values as a `note` of type `field`, not flagged (an outlier over 30 words is) |
 | fields (`text:date`, `text:page-number`, `text:author-name`, variables, ...) | their displayed value, in the text |
 | an empty paragraph of the body whose style (after inheritance) has a bottom border and no top, left or right border, or is LibreOffice's "Horizontal Line" style (`Horizontal_20_Line`) | `thematic_break`, `Origin` `inferred` (ODF has no rule element; this is what LibreOffice's AutoCorrect makes of `---`). Not when a paragraph beside it has the same border (a box), and never in table cells, list items, notes, comments, frames, headers or footers. Bordered paragraphs with text and literal `* * *` stay paragraphs |
 | `text:ruby` | base text, then the annotation in brackets |
@@ -93,9 +93,11 @@ A flat file is one XML document (`office:document`) holding metadata, styles, ma
 
 `HiddenChecked` is `invisible+tiny+low_contrast+invisible_chars`. All checks are cheap and always run; `Options.DeepHidden` changes nothing.
 
+The flag marks a hiding mechanism applied to content that would otherwise be seen, as go-fast-core's "What earns a flag" asks. **Data OpenDocument files routinely keep and never show is extracted and not flagged**: metadata, user field declarations (`text:user-field-decls`), named ranges and expressions and database ranges, conditional-text conditions and their other value, formula strings (`Table.Cells`), comments, tracked deletions, form values (also of hidden controls and password fields, and of controls placed nowhere). The `stored` part is not hidden as a whole, and renderers leave it out unless `RenderOptions.Stored`. **Outliers** are flagged: one such item holding more than `MaxUnshownWords` (30) words is flagged `invisible`, and its part carries `odf.unshown_outlier`. A clean, ordinary file comes out with no hidden flag and no `text.hidden` warning (tested).
+
 | Reason | When |
 |---|---|
-| `invisible` | `text:display="none"` in a text, paragraph or inherited style; `text:hidden-paragraph` and `text:hidden-text` that the file records as hidden (`text:is-hidden="true"`) or whose condition is literally true; a section with `text:display="none"` or `"condition"` (conditions are not evaluated, so a conditional section is flagged); fields with `text:display="none"`; collapsed or filtered table rows and columns; a header or footer switched off (`style:display="false"`); conditional-text notes and the stored part |
+| `invisible` | `text:display="none"` in a text, paragraph or inherited style; `text:hidden-paragraph`, `text:hidden-text` and sections with `text:display="condition"` that the file records as hidden (`text:is-hidden="true"`) or whose condition is literally true (conditions are not evaluated, and a conditional section is not flagged for having one); a section with `text:display="none"`; fields with `text:display="none"`; collapsed or filtered table rows and columns; hidden sheets and slides; a header or footer switched off (`style:display="false"`); an outlier of routine unshown data (below) |
 | `tiny` | font size under 2 pt after relative sizes and character scaling (`style:text-scale`) |
 | `low_contrast` | `fo:color` against the nearest background: the characters' own background, else the paragraph's, else the table cell's, section's or frame's, else the page's (the first master page's layout), else white |
 | `transparent` | LibreOffice's `loext:opacity` of 0 (found, not listed as checked) |
@@ -112,6 +114,7 @@ Codes of this library:
 | Code | What happened |
 |---|---|
 | `odf.unread_content` | The document holds content this version does not read: an embedded formula or chart it could not read, a document held whole in a flat file, plug-ins, pictures over 64 MiB held in a flat file. The message counts them |
+| `odf.unshown_outlier` | An item of data the file keeps and never shows holds more than 30 words (`MaxUnshownWords`); it is flagged `invisible` |
 | `odf.region_split` | An area of a sheet with thinly spread cells was written as one table per run of cells in a row |
 | `odf.part_damaged` | A supporting stream (manifest, styles, metadata) could not be read to its end; what was read is used |
 | `odf.property_truncated` | A metadata value was cut at 64 KiB, or keywords or user-defined properties beyond 256 were left out |
@@ -141,7 +144,7 @@ In every kind of document, `draw:object` and `draw:object-ole` in a frame are re
 - **Charts** (a sub-document with `chart:chart`) give a `caption` block with the chart's title, then a `table` block of the data the chart keeps in its own table (header rows as `HeaderRows`), with `Attrs`: `role=chart`, `chart` the chart class (`bar`, `line`, ...), `x_axis` and `y_axis` the axis titles, `name` the frame's name.
 - When a formula or chart became blocks, the frame's replacement picture (`ObjectReplacements/Object N`) is not given: it is a drawing of the same thing.
 - **Other sub-documents** (a text document or spreadsheet embedded in another) are packed as a package of their own (members stored, `mimetype` first, the media type from the manifest or else from its body element) and handed to `Options.ExtractChild`; **OLE objects** (`draw:object-ole`, a member such as `Object 4`) are handed on as stored, with the manifest's media type. Each appears in `Document.Children`, extracted or listed. The decompression budget is settled with the shared budget before and after each. Linked objects (an address outside the package) are counted in `input.external_reference` and not fetched.
-- **Form controls** (`office:forms`, placed by `draw:control`) give a paragraph where they stand: label and value as `label: value` (a check box's value is `checked`), `Attrs["field"]` the control's name and `Attrs["control"]` its kind; a list box or combo box also gives a `choices` note of its options. Controls that no `draw:control` places go to the `stored` part with `stored=form_field`. The values of hidden controls and password fields are flagged `invisible`.
+- **Form controls** (`office:forms`, placed by `draw:control`) give a paragraph where they stand: label and value as `label: value` (a check box's value is `checked`), `Attrs["field"]` the control's name and `Attrs["control"]` its kind; a list box or combo box also gives a `choices` note of its options. Controls that no `draw:control` places go to the `stored` part with `stored=form_field`. Form values are routine data: the values of hidden controls, password fields and unplaced controls are flagged `invisible` only as outliers (over 30 words).
 
 ## Not read (yet)
 

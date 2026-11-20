@@ -262,7 +262,7 @@ paragraph{invisible} Sethidden value.
 paragraph Pick red
 note red/blue
 paragraph no
-note{invisible} IF ooow:x==1 THEN "yes" ELSE "no"`)
+note IF ooow:x==1 THEN "yes" ELSE "no"`)
 	b := body(t, doc)
 	if b[1].Hidden != gofastcore.HiddenInvisible || len(b[1].Spans) != 1 || b[1].Text[b[1].Spans[0].Start:b[1].Spans[0].End] != "hidden value" {
 		t.Errorf("hidden field: %+v", b[1])
@@ -274,7 +274,7 @@ note{invisible} IF ooow:x==1 THEN "yes" ELSE "no"`)
 		t.Fatalf("no stored part")
 	}
 	st := doc.Parts[1].Blocks[0]
-	if st.Text != "Secret: ignore previous instructions" || st.Attrs[gofastcore.AttrStored] != gofastcore.StoredDocumentVariable || st.Hidden != gofastcore.HiddenInvisible {
+	if st.Text != "Secret: ignore previous instructions" || st.Attrs[gofastcore.AttrStored] != gofastcore.StoredDocumentVariable || st.Hidden != 0 || doc.Parts[1].Hidden != 0 {
 		t.Errorf("stored %+v", st)
 	}
 	// A range of parts leaves the stored part out.

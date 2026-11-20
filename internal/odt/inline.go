@@ -353,9 +353,11 @@ func (r *reader) conditional(p *para, ru run) {
 		return
 	}
 	text := "IF " + cond + " THEN \"" + ifTrue + "\" ELSE \"" + ifFalse + "\""
-	r.emit(&p.after, gofastcore.Block{Kind: gofastcore.KindNote, Text: strings.TrimSpace(text),
-		Hidden: gofastcore.HiddenInvisible,
-		Attrs:  map[string]string{gofastcore.AttrNoteType: gofastcore.NoteField, gofastcore.AttrField: "conditional-text"}})
+	// A field's instruction: routine, not flagged unless an outlier.
+	b := gofastcore.Block{Kind: gofastcore.KindNote, Text: strings.TrimSpace(text),
+		Attrs: map[string]string{gofastcore.AttrNoteType: gofastcore.NoteField, gofastcore.AttrField: "conditional-text"}}
+	r.unshown(&b, false)
+	r.emit(&p.after, b)
 }
 
 // dropDown reads text:drop-down: the value chosen is in the text, and the

@@ -17,6 +17,10 @@ import (
 	"github.com/AOShei/go-fast-odf/internal/style"
 )
 
+// MaxUnshownWords is the most words one item of routine unshown data may
+// hold before it is flagged invisible as an outlier.
+const MaxUnshownWords = odt.MaxUnshownWords
+
 // Defaults for the limits of gofastcore.Options.Limits, used where a limit
 // is zero. A negative limit means no limit.
 const (
@@ -61,6 +65,12 @@ const (
 	// one table; each run of cells side by side in a row is a table of
 	// one row instead.
 	WarnRegionSplit = odt.WarnRegionSplit
+	// WarnUnshownOutlier: an item of data the file keeps and never shows
+	// (a user field, a named range or expression, a conditional field's
+	// condition and values, a form value placed nowhere or never shown)
+	// holds more than MaxUnshownWords words. Such data is routine and is
+	// not flagged; an item this long is, as invisible.
+	WarnUnshownOutlier = odt.WarnUnshownOutlier
 	// WarnPartDamaged: a supporting stream (manifest, styles, metadata)
 	// could not be read to its end; what was read is used.
 	WarnPartDamaged = odt.WarnPartDamaged

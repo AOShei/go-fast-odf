@@ -572,19 +572,22 @@ func (r *reader) placeControl(c ctxt, dst *[]gofastcore.Block) {
 		return
 	}
 	ctl.used = true
-	r.controlBlocks(ctl, c.hidden, dst)
+	r.controlBlocks(ctl, c.hidden, dst, false)
 }
 
-func (r *reader) controlBlocks(ctl *control, hidden gofastcore.Hidden, dst *[]gofastcore.Block) {
+// controlBlocks writes a control's blocks. The value of a hidden control
+// or a password field is never shown, but form values are routine data:
+// it is flagged only as an outlier (MaxUnshownWords).
+func (r *reader) controlBlocks(ctl *control, hidden gofastcore.Hidden, dst *[]gofastcore.Block, stored bool) {
 	if text := ctl.text(); text != "" {
 		b := gofastcore.Block{Kind: gofastcore.KindParagraph, Text: text, Attrs: map[string]string{"control": ctl.kind}}
 		if ctl.name != "" {
 			b.Attrs[gofastcore.AttrField] = ctl.name
 		}
-		if ctl.hidden {
-			hidden |= gofastcore.HiddenInvisible
-		}
 		whole(&b, hidden)
+		if ctl.hidden || stored {
+			r.unshown(&b, stored)
+		}
 		if !r.emit(dst, b) {
 			return
 		}
@@ -609,7 +612,7 @@ func (r *reader) unplacedControls() {
 			continue
 		}
 		var blocks []gofastcore.Block
-		r.controlBlocks(ctl, 0, &blocks)
+		r.controlBlocks(ctl, 0, &blocks, true)
 		for _, b := range blocks {
 			b.Attrs[gofastcore.AttrStored] = gofastcore.StoredFormField
 			r.userVars = append(r.userVars, b)

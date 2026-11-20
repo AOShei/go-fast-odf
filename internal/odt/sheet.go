@@ -257,6 +257,7 @@ func (r *reader) namedRanges(sheet string) {
 		if string(s.Local()) == "database-range" {
 			b.Attrs["kind"] = "database_range"
 		}
+		r.unshown(&b, true)
 		if !r.emit(&r.userVars, b) {
 			return
 		}

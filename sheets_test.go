@@ -103,7 +103,7 @@ note =.$Lists.A1:A3`)
 		t.Errorf("hidden sheet %+v", lists)
 	}
 	stored := doc.Parts[2]
-	if stored.Kind != gofastcore.PartStored || summary(stored.Blocks) != "paragraph{invisible} Lists!Local: $Lists.$A$1\nparagraph{invisible} People: $Data.$A$1:.$A$3\nparagraph{invisible} Rate: of:=0.2\nparagraph{invisible} DB: Data.A1:Data.C3\n" {
+	if stored.Kind != gofastcore.PartStored || summary(stored.Blocks) != "paragraph Lists!Local: $Lists.$A$1\nparagraph People: $Data.$A$1:.$A$3\nparagraph Rate: of:=0.2\nparagraph DB: Data.A1:Data.C3\n" {
 		t.Errorf("stored:\n%s", summary(stored.Blocks))
 	}
 	// A range of parts gives those sheets and no stored part.

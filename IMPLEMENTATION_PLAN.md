@@ -68,6 +68,7 @@ execs/s per target.
 | Form controls and their values | done (run 3) |
 | Thematic breaks (core df335f0) for empty bottom-bordered paragraphs | done (run 3) |
 | Sub-documents held whole in a flat file's draw:object handed to children | todo |
+| Hidden flag as a signal (core 4de43b1): routine unshown data unflagged, outliers over 30 words flagged with odf.unshown_outlier, stored part not hidden, clean-file tests | done (run 4) |
 | Unit tests inside internal packages; Table.Cells hrefs in text-document tables | todo |
 
 ### Phase 3: encryption and polish
