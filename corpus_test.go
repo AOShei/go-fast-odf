@@ -20,8 +20,7 @@ import (
 // and heldout/, each with a time limit and bounded budgets. It logs one
 // tally per set (counts only: held-out files are scored, never looked
 // at) and fails on a panic, a Validate failure or a timeout. With -v it
-// also logs each hidden flag found in dev/ files, with an excerpt, for
-// judging false positives.
+// also logs each display reason found in dev/ files, with an excerpt.
 func TestCorpus(t *testing.T) {
 	root := os.Getenv("GOFAST_CORPUS")
 	if root == "" {
@@ -59,7 +58,7 @@ func TestCorpus(t *testing.T) {
 					t.Errorf("%s: Validate: %s", label, firstLine(res.invalid.Error(), set))
 				}
 				if set == "dev" && testing.Verbose() && res.doc != nil {
-					logFlags(t, e.Name(), res.doc)
+					logDisplay(t, e.Name(), res.doc)
 					for p := range res.doc.Parts {
 						if res.doc.Parts[p].Has(gofastcore.WarnPartNoText) {
 							t.Logf("NOTEXT %s part %d of %d", e.Name(), p+1, len(res.doc.Parts))
@@ -206,7 +205,7 @@ func (t *tally) String() string {
 	return sb.String()
 }
 
-func logFlags(t *testing.T, name string, doc *gofastcore.Document) {
+func logDisplay(t *testing.T, name string, doc *gofastcore.Document) {
 	for part, b := range doc.AllBlocks() {
 		if b.Display == 0 {
 			continue
@@ -230,13 +229,13 @@ func logFlags(t *testing.T, name string, doc *gofastcore.Document) {
 		where := ""
 		switch {
 		case part.Display != 0:
-			where = " (part " + part.Name + " hidden)"
+			where = " (part " + part.Name + " " + part.Display.String() + ")"
 		case b.Table != nil:
 			for _, h := range b.Table.Display {
 				where += fmt.Sprintf(" [r%d c%d %dx%d]", h.Row, h.Col, h.RowSpan, h.ColSpan)
 			}
 		}
-		t.Logf("FLAG %s part %d %s %s%s: %q", name, part.Number, b.Kind, b.Display, where, string(r))
+		t.Logf("DISPLAY %s part %d %s %s%s: %q", name, part.Number, b.Kind, b.Display, where, string(r))
 	}
 }
 
