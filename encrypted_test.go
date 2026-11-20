@@ -1,6 +1,7 @@
 package gofastodf
 
 import (
+	"archive/zip"
 	"bytes"
 	"context"
 	"errors"
@@ -8,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/AOShei/go-fast-core"
 )
@@ -87,5 +89,51 @@ func TestDecryptBlowfish(t *testing.T) {
 func TestDecryptCBC(t *testing.T) {
 	for _, c := range encCases {
 		t.Run(c.file, func(t *testing.T) { checkDecrypted(t, c) })
+	}
+}
+
+// encryptedODT builds a text package whose content.xml is encrypted as
+// encData describes; the encrypted bytes are 32 zero bytes.
+func encryptedODT(t *testing.T, encData string) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	manifest := `<?xml version="1.0" encoding="UTF-8"?><manifest:manifest xmlns:manifest="urn:oasis:names:tc:opendocument:xmlns:manifest:1.0">` +
+		`<manifest:file-entry manifest:full-path="/" manifest:media-type="application/vnd.oasis.opendocument.text"/>` +
+		`<manifest:file-entry manifest:full-path="content.xml" manifest:media-type="text/xml" manifest:size="100">` + encData +
+		`</manifest:file-entry></manifest:manifest>`
+	for _, m := range [][2]string{{"mimetype", "application/vnd.oasis.opendocument.text"}, {"content.xml", string(make([]byte, 32))}, {"META-INF/manifest.xml", manifest}} {
+		w, err := zw.CreateHeader(&zip.FileHeader{Name: m[0], Method: zip.Store})
+		if err != nil {
+			t.Fatal(err)
+		}
+		w.Write([]byte(m[1]))
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
+}
+
+// Key derivation honours the context: a file that asks for as much work
+// as the limits allow stops when the context is done.
+func TestKeyDerivationHonoursContext(t *testing.T) {
+	const cbc = `<manifest:encryption-data manifest:checksum-type="SHA1/1K" manifest:checksum="AAAAAAAAAAAAAAAAAAAAAAAAAAA=">` +
+		`<manifest:algorithm manifest:algorithm-name="http://www.w3.org/2001/04/xmlenc#aes256-cbc" manifest:initialisation-vector="AAAAAAAAAAAAAAAAAAAAAA=="/>`
+	cases := map[string]string{
+		"pbkdf2": cbc + `<manifest:key-derivation manifest:key-derivation-name="PBKDF2" manifest:iteration-count="10000000" manifest:salt="AAAA" manifest:key-size="32"/></manifest:encryption-data>`,
+		"argon2id": `<manifest:encryption-data><manifest:algorithm manifest:algorithm-name="http://www.w3.org/2009/xmlenc11#aes256-gcm" manifest:initialisation-vector="AAAAAAAAAAAAAAAA"/>` +
+			`<manifest:key-derivation manifest:key-derivation-name="urn:oasis:names:tc:opendocument:xmlns:manifest:1.0#argon2id" manifest:salt="AAAAAAAAAAAAAAAAAAAAAA==" manifest:key-size="32" ` +
+			`manifest:argon2-iterations="4" manifest:argon2-memory="262144" manifest:argon2-lanes="1"/></manifest:encryption-data>`,
+	}
+	for name, enc := range cases {
+		data := encryptedODT(t, enc)
+		ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+		start := time.Now()
+		_, err := Extract(ctx, bytes.NewReader(data), int64(len(data)), &gofastcore.Options{Password: "pw"})
+		cancel()
+		if d := time.Since(start); d > 500*time.Millisecond || !errors.Is(err, context.DeadlineExceeded) {
+			t.Errorf("%s: %v after %v, want the context's error at once", name, err, d)
+		}
 	}
 }

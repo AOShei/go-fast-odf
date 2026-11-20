@@ -3,8 +3,12 @@ package odpkg
 import (
 	"archive/zip"
 	"bytes"
+	"context"
+	"crypto/pbkdf2"
+	"crypto/sha1"
 	"errors"
 	"io"
+	"os"
 	"testing"
 	"time"
 )
@@ -88,6 +92,145 @@ func TestEncryptionLimits(t *testing.T) {
 		}
 		if d := time.Since(start); d > time.Second {
 			t.Errorf("%s: took %v", c.name, d)
+		}
+	}
+}
+
+// Argon2id is capped at 256 MiB of memory and 1 GiB of memory times
+// passes for one key; what LibreOffice writes passes. The parameters are
+// checked directly, so that no derivation runs if the caps are wrong.
+func TestArgonCaps(t *testing.T) {
+	cases := []struct {
+		mem, passes, lanes int
+		ok                 bool
+	}{
+		{65536, 3, 4, true},      // LibreOffice
+		{262144, 4, 4, true},     // 256 MiB, 1 GiB of work
+		{262152, 1, 4, false},    // over 256 MiB
+		{262144, 5, 4, false},    // over 1 GiB of work
+		{131072, 9, 4, false},    // over 1 GiB of work
+		{1 << 20, 1, 4, false},   // the old cap
+		{1048576, 64, 64, false}, // far over
+		{8, MaxArgonIterations, 1, true},
+	}
+	for _, c := range cases {
+		err := checkArgon(&Encryption{ArgonMemory: c.mem, ArgonIterates: c.passes, ArgonLanes: c.lanes})
+		if (err == nil) != c.ok || (err != nil && !errors.Is(err, ErrWork)) {
+			t.Errorf("%d KiB, %d passes, %d lanes: %v", c.mem, c.passes, c.lanes, err)
+		}
+	}
+	if maxPackageArgon > 2*maxArgonWork {
+		t.Errorf("package Argon2 total %d KiB-passes is over twice the per-key cap %d", maxPackageArgon, maxArgonWork)
+	}
+}
+
+// An encrypted member that the archive also compresses is read no further
+// than the size of the package: a deflate bomb there is damage, found
+// without inflating it.
+func TestEncryptedDeflateBomb(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	for _, m := range []struct {
+		name   string
+		data   []byte
+		method uint16
+	}{
+		{"mimetype", []byte("application/vnd.oasis.opendocument.text"), zip.Store},
+		{"content.xml", make([]byte, 16<<20), zip.Deflate},
+		{"META-INF/manifest.xml", []byte(manifestHead + cbcData(`<manifest:key-derivation manifest:key-derivation-name="PBKDF2" manifest:iteration-count="10" manifest:salt="AAAA" manifest:key-size="32"/>`) + `</manifest:file-entry></manifest:manifest>`), zip.Store},
+	} {
+		w, _ := zw.CreateHeader(&zip.FileHeader{Name: m.name, Method: m.method})
+		w.Write(m.data)
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	data := buf.Bytes()
+	const budget = 1 << 30
+	p, err := Open(bytes.NewReader(data), int64(len(data)), Limits{MaxDecodedBytes: budget, MaxMembers: 16})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.SetPassword("pw")
+	_, err = p.Open("content.xml")
+	if !errors.Is(err, ErrDamaged) {
+		t.Errorf("deflate bomb: %v, want ErrDamaged", err)
+	}
+	if read := budget - p.Remaining(); read > int64(len(data))+64<<10 {
+		t.Errorf("read %d bytes of a %d-byte package", read, len(data))
+	}
+}
+
+// ODF 1.4's inner package is inflated no further than the limit given:
+// past it, ErrBudget, which the extractor gives as ErrLimitExceeded.
+func TestEncryptedPackageLimit(t *testing.T) {
+	data, err := os.ReadFile("../../testdata/encrypted/gcm-argon2id-odf14.odt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	open := func() *Package {
+		p, err := Open(bytes.NewReader(data), int64(len(data)), Limits{MaxDecodedBytes: 1 << 30, MaxMembers: 64})
+		if err != nil {
+			t.Fatal(err)
+		}
+		p.SetPassword("go-fast")
+		return p
+	}
+	p := open()
+	inner, err := p.ReadEncryptedPackage("encrypted-package", 1<<30)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := open().ReadEncryptedPackage("encrypted-package", int64(len(inner))); err != nil {
+		t.Errorf("at the limit: %v", err)
+	}
+	if _, err := open().ReadEncryptedPackage("encrypted-package", int64(len(inner))-1); !errors.Is(err, ErrBudget) {
+		t.Errorf("one byte over the limit: %v, want ErrBudget", err)
+	}
+}
+
+// A package that shares another's key-derivation work is held to the
+// caps of both together.
+func TestShareWork(t *testing.T) {
+	data := encPackage(t, cbcData(`<manifest:key-derivation manifest:key-derivation-name="PBKDF2" manifest:iteration-count="10" manifest:salt="AAAA" manifest:key-size="32"/>`), make([]byte, 32))
+	open := func() *Package {
+		p, err := Open(bytes.NewReader(data), int64(len(data)), Limits{MaxDecodedBytes: 1 << 20, MaxMembers: 16})
+		if err != nil {
+			t.Fatal(err)
+		}
+		p.SetPassword("pw")
+		return p
+	}
+	outer, inner := open(), open()
+	outer.kdfWork.Store(maxPackageIterations)
+	outer.argonWork.Store(maxPackageArgon)
+	inner.ShareWork(outer)
+	if _, err := inner.Open("content.xml"); !errors.Is(err, ErrWork) {
+		t.Errorf("PBKDF2 past the outer package's total: %v, want ErrWork", err)
+	}
+	argon := encPackage(t, `<manifest:encryption-data>`+gcmAlg+sha256SK+argonLOD+`loext:argon2-iterations="1" loext:argon2-memory="64" loext:argon2-lanes="1"/></manifest:encryption-data>`, make([]byte, 32))
+	a, err := Open(bytes.NewReader(argon), int64(len(argon)), Limits{MaxDecodedBytes: 1 << 20, MaxMembers: 16})
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.SetPassword("pw")
+	a.ShareWork(outer)
+	if _, err := a.Open("content.xml"); !errors.Is(err, ErrWork) {
+		t.Errorf("Argon2 past the outer package's total: %v, want ErrWork", err)
+	}
+}
+
+// pbkdf2SHA1 gives what crypto/pbkdf2 gives, for key sizes of one block
+// and of several.
+func TestPBKDF2MatchesStdlib(t *testing.T) {
+	for _, c := range []struct{ iter, size int }{{1, 16}, {2, 20}, {1024, 16}, {1000, 32}, {4097, 56}} {
+		want, err := pbkdf2.Key(sha1.New, "start key", []byte("salt"), c.iter, c.size)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := pbkdf2SHA1(context.Background(), []byte("start key"), []byte("salt"), c.iter, c.size)
+		if err != nil || !bytes.Equal(got, want) {
+			t.Errorf("%d iterations, %d bytes: %x, %v; want %x", c.iter, c.size, got, err, want)
 		}
 	}
 }

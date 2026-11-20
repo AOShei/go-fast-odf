@@ -152,7 +152,7 @@ With `Options.Password`, an encrypted package is decrypted:
 
 An algorithm, key derivation or checksum other than these gives `ErrUnsupported`. Without a password an encrypted file is `ErrPasswordRequired`; a password is never guessed. The password is passed to embedded documents as core says; objects inside an encrypted package are decrypted with it. `Metadata.Encrypted` is set on a decrypted document.
 
-The manifest sets the cost of a key, so it is capped: PBKDF2 at 10 million iterations for a member and 30 million for a package; Argon2id at 1 GiB of memory, 64 passes, 64 lanes, and memory times passes at 4 GiB (8 GiB for a package). Inflated bytes of decrypted members count against `MaxDecodedBytes` like any others.
+The manifest sets the cost of a key, so it is capped: PBKDF2 at 10 million iterations for a member and 30 million for a package; Argon2id at 256 MiB of memory, 64 passes, 64 lanes, and memory times passes at 1 GiB for a key (2 GiB for a package). Inflated bytes of decrypted members count against `MaxDecodedBytes` like any others. An encrypted member that the archive also compresses (writers store them) may inflate to no more than the size of the package before it is decrypted; past that the package is damaged (`ErrMalformed`). ODF 1.4's inner package, decrypted and inflated, may be no larger than `MaxInputBytes` (counted as it is inflated; `ErrLimitExceeded` past it), and its members share the outer package's key-derivation caps.
 
 ## Limits
 

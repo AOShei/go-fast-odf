@@ -11,6 +11,7 @@ package odpkg
 
 import (
 	"archive/zip"
+	"context"
 	"errors"
 	"fmt"
 	"hash/crc32"
@@ -96,12 +97,15 @@ type Package struct {
 	synced    int64       // the budget as it stood at the last Sync
 	flat      io.ReaderAt // a flat file, or nil
 	flatSize  int64
+	size      int64 // of the archive: bounds an encrypted member it compresses
 	manifest  map[string]Entry
 	mime      string // what the mimetype member says, or the manifest's root entry
 	damaged   bool   // the manifest could not be read to its end
 	password  string
-	kdfWork   atomic.Int64 // PBKDF2 iterations spent
-	argonWork atomic.Int64 // Argon2 KiB-passes spent
+	ctx       context.Context // stops key derivation; nil for none
+	kdfWork   atomic.Int64    // PBKDF2 iterations spent
+	argonWork atomic.Int64    // Argon2 KiB-passes spent
+	shared    *Package        // whose totals key derivation is charged to, or nil
 	keyMu     sync.Mutex
 	keys      map[string][]byte // derived keys, by member
 }
@@ -134,6 +138,7 @@ func Open(r io.ReaderAt, size int64, lim Limits) (*Package, error) {
 		files:     make(map[string]*zip.File, len(zr.File)),
 		names:     make([]string, 0, len(zr.File)),
 		recovered: recovered,
+		size:      size,
 		manifest:  map[string]Entry{},
 	}
 	p.budget.Store(lim.MaxDecodedBytes)

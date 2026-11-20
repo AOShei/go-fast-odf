@@ -249,6 +249,10 @@ func (e *Extractor) Extract(ctx context.Context, r io.ReaderAt, size int64, opts
 			return nil, fmt.Errorf("gofastodf: the document is encrypted: %w", gofastcore.ErrPasswordRequired)
 		}
 		pkg.SetPassword(o.Password)
+		pkg.SetContext(ctx)
+		if outer, ok := ctx.Value(innerKey{}).(*odpkg.Package); ok {
+			pkg.ShareWork(outer)
+		}
 		if !pkg.Has("content.xml") && pkg.Encrypted(encryptedPackage) {
 			return e.extractWhole(ctx, pkg, decode, size, &o)
 		}
@@ -414,16 +418,17 @@ func (e *Extractor) extractWhole(ctx context.Context, pkg *odpkg.Package, decode
 	if ctx.Value(innerKey{}) != nil {
 		return nil, fmt.Errorf("gofastodf: an encrypted package holds another: %w", gofastcore.ErrMalformed)
 	}
-	inner, err := pkg.ReadEncryptedPackage(encryptedPackage)
+	// The inner package is a file in its own right: it may be no larger
+	// than MaxInputBytes, counted as it is inflated, and it is counted
+	// against the decompression limit too.
+	limit := gofastcore.ResolveLimit(o.Limits.MaxInputBytes, DefaultMaxInputBytes)
+	inner, err := pkg.ReadEncryptedPackage(encryptedPackage, limit)
 	if err != nil {
 		return nil, wrap(err)
 	}
 	pkg.Sync(decode)
-	in := *o
-	// The inner package was counted against the decompression limit as
-	// it was inflated; it is read whatever its size.
-	in.Limits.MaxInputBytes = int64(len(inner)) + 1
-	doc, err := e.Extract(context.WithValue(ctx, innerKey{}, true), bytes.NewReader(inner), int64(len(inner)), &in)
+	// Its members share the outer package's key-derivation caps.
+	doc, err := e.Extract(context.WithValue(ctx, innerKey{}, pkg), bytes.NewReader(inner), int64(len(inner)), o)
 	if err != nil {
 		return nil, err
 	}
@@ -453,6 +458,9 @@ func encrypted(pkg *odpkg.Package) bool {
 // wrap turns a package error into one that wraps the matching shared
 // error.
 func wrap(err error) error {
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return err
+	}
 	shared := gofastcore.ErrMalformed
 	switch {
 	case errors.Is(err, odpkg.ErrNotPackage):
