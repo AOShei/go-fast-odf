@@ -64,8 +64,5 @@ The timings are within noise on a shared machine. Bytes and allocations per op f
 
 ## 7. Points for Andrew
 
-- **Form controls:** a control declared not visible is not reported, because the handoff's ODF list does not name it. Its value stays data with no reason. Say if it should be `hidden`.
-- **Command flag renamed** to `-exclude-display`, with no alias (R7). Confirm the name matches the other libraries.
-- **No CHANGELOG** exists in go-fast-odf, so none was written; the plan records the change. Say if one should be started.
 - **Specification details to check** (no web access): `loext:opacity` is a LibreOffice extension, not ODF 1.3; I believe the `filter` value of `table:visibility` is in ODF 1.2 and later.
 - The `git worktree` route for the "before" run was refused by the sandbox: the corpus path needed an environment variable. So the parent commit was checked out on the clean tree instead, and the branch was then restored. The worktree was removed.

@@ -71,6 +71,7 @@ execs/s per target.
 | Core's shared outlier rule (17a0e50), corpus test, automatic-colour opacity, external-link cache sheets | done (run 5); outlier rule and link-cache exemption removed in run 6 |
 | Hidden flag as a signal (core 4de43b1) | done (run 4); superseded by run 6 |
 | Declared, not judged (core 05bbddb, schema 0.2): `Display` with `hidden` and `no_ink` from what the file declares only; low-contrast, tiny and outlier checks, `HiddenChecked`, the `text.hidden` and `text.unshown_outlier` warnings and the link-cache exemption removed; filtered rows and link-cache sheets reported `hidden`; command flag `-exclude-display`; R6 test | done (run 6) |
+| Follow-up decisions (2026-11-20): command flags as `COMMAND_FLAGS.md` (`-stored` added, help text aligned, `TestRenderFlags`); a placed form control whose `draw:control` declares `draw:display="none"` (or stands on such a layer) is `hidden` (`TestControlDisplay`), `form:hidden` and unplaced controls stay in the stored part; `CHANGELOG.md` started | done (run 7) |
 | Unit tests inside internal packages; Table.Cells hrefs in text-document tables | todo |
 
 ### Phase 3: encryption and polish

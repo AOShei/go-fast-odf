@@ -98,7 +98,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		quiet     = flags.Bool("quiet", false, "say nothing about files that were read; failures are still reported")
 		version   = flags.Bool("version", false, "print the version and exit")
 		furniture = flags.Bool("furniture", false, "in Markdown and text, include running headers and footers")
-		stored    = flags.Bool("stored", false, "in Markdown and text, include the stored part (data the file keeps but shows nowhere: user variables, named ranges, form fields no page places)")
+		stored    = flags.Bool("stored", false, "in Markdown and text, include the stored part (data the file keeps but shows nowhere: user fields, named ranges, form fields no page places)")
 		markers   = flags.Bool("part-markers", false, "in Markdown and text, put a line before each part saying which part it is")
 	)
 	var exclude displayFlag

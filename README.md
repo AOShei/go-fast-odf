@@ -26,11 +26,20 @@ The format is decided from the file (a package's `mimetype` member or manifest r
 ```
 gofastodf [flags] file-or-directory...
   -format json|markdown|text   -parts 2-5   -images meta|data|none
-  -spans  -cells  -furniture  -part-markers  -exclude-display[=hidden,no_ink]
+  -spans  -cells  -furniture  -stored  -part-markers  -exclude-display[=reasons]
   -max-cells N  -max-decoded-bytes N  -max-text-bytes N  -o file  -quiet
 ```
 
 Documents go to standard output; warnings of severity error go to standard error; the exit status is 1 if any input could not be read.
+
+The render flags are the series' shared ones (`COMMAND_FLAGS.md` in the workspace) and affect Markdown and text only; JSON always has everything:
+
+| Flag | Meaning |
+|---|---|
+| `-furniture` | include running headers and footers |
+| `-stored` | include the stored part (data the file keeps but shows nowhere: user fields, named ranges, form fields no page places) |
+| `-part-markers` | put a line before each part saying which part it is |
+| `-exclude-display[=reasons]` | leave out what the file declares not displayed: all of it (`-exclude-display`, `=true`, `=all`), or only those reasons (`=hidden`, `=no_ink`, `=hidden,no_ink`; comma or `+`); `=false` or `=` is off; any other value, `unknown` included, is an error |
 
 ## How a text document maps
 
@@ -101,7 +110,7 @@ Everything is extracted. `Display` (go-fast-core schema 0.2) on a block, span, t
 - table rows and columns with `table:visibility` `collapse` or `filter`
 - a sheet whose table style has `table:display="false"`, LibreOffice's cached copies of linked sheets included
 - a slide whose drawing-page style has `presentation:visibility="hidden"`
-- a frame or shape with `draw:display="none"`, or on a layer with `draw:display="none"`
+- a frame or shape with `draw:display="none"`, or on a layer with `draw:display="none"`; this includes a form control placed by a `draw:control` with `draw:display="none"` or on such a layer, whose paragraph (and choices note) is `hidden`
 - a header or footer switched off with `style:display="false"`
 
 `no_ink` is set for:
@@ -154,7 +163,7 @@ In every kind of document, `draw:object` and `draw:object-ole` in a frame are re
 - **Charts** (a sub-document with `chart:chart`) give a `caption` block with the chart's title, then a `table` block of the data the chart keeps in its own table (header rows as `HeaderRows`), with `Attrs`: `role=chart`, `chart` the chart class (`bar`, `line`, ...), `x_axis` and `y_axis` the axis titles, `name` the frame's name.
 - When a formula or chart became blocks, the frame's replacement picture (`ObjectReplacements/Object N`) is not given: it is a drawing of the same thing.
 - **Other sub-documents** (a text document or spreadsheet embedded in another) are packed as a package of their own (members stored, `mimetype` first, the media type from the manifest or else from its body element) and handed to `Options.ExtractChild`; **OLE objects** (`draw:object-ole`, a member such as `Object 4`) are handed on as stored, with the manifest's media type. Each appears in `Document.Children`, extracted or listed. The decompression budget is settled with the shared budget before and after each. Linked objects (an address outside the package) are counted in `input.external_reference` and not fetched.
-- **Form controls** (`office:forms`, placed by `draw:control`) give a paragraph where they stand: label and value as `label: value` (a check box's value is `checked`), `Attrs["field"]` the control's name and `Attrs["control"]` its kind; a list box or combo box also gives a `choices` note of its options. Controls that no `draw:control` places go to the `stored` part with `stored=form_field`. Form values are data: the values of hidden controls, password fields and unplaced controls are extracted with no display reason.
+- **Form controls** (`office:forms`, placed by `draw:control`) give a paragraph where they stand: label and value as `label: value` (a check box's value is `checked`), `Attrs["field"]` the control's name and `Attrs["control"]` its kind; a list box or combo box also gives a `choices` note of its options. Controls that no `draw:control` places go to the `stored` part with `stored=form_field`. Form values are data: the values of hidden controls, password fields and unplaced controls are extracted with no display reason. A placed control is `hidden` when its `draw:control` declares `draw:display="none"` or stands on a layer with `draw:display="none"`; that is the only switch ODF 1.3 gives a placed control (`form:printable` concerns printing only and is not read; the graphic style of a control has no display property).
 
 ## Not read (yet)
 
