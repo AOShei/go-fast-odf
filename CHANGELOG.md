@@ -4,6 +4,11 @@ All notable changes to go-fast-odf are recorded here, in the style of
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). No version has
 been released yet.
 
+## Unreleased: core d4cd8e2
+
+- go-fast-core pinned at `d4cd8e2`: `Validate` now rejects an inferred
+  `thematic_break`; this library emits only declared ones and passes.
+
 ## [Unreleased]
 
 ### Changed: no inferred thematic break (branch `no-inferred-break`)

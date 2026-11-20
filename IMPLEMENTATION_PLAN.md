@@ -2,7 +2,7 @@
 
 Module `github.com/AOShei/go-fast-odf`, package `gofastodf`. Extracts
 OpenDocument 1.0 to 1.3 files into the go-fast-core model (core pinned at
-commit ebecf3c). Standard library and go-fast modules only.
+commit d4cd8e2). Standard library and go-fast modules only.
 
 Status legend: **done**, **partial**, **todo**.
 
