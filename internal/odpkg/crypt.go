@@ -35,13 +35,14 @@ var (
 // Limits on the work a manifest may ask for. A real file asks for far
 // less: LibreOffice writes 100000 PBKDF2 iterations, and Argon2id with 64
 // MiB, 3 passes and 4 lanes.
-const (
+// They are variables only so that the fuzz test can lower them.
+var (
 	// MaxIterations is the largest PBKDF2 iteration count accepted for
 	// one member.
 	MaxIterations = 10_000_000
 	// maxPackageIterations bounds the PBKDF2 iterations of all members
 	// of a package together.
-	maxPackageIterations = 30_000_000
+	maxPackageIterations int64 = 30_000_000
 )
 
 // Names the manifest uses. ODF 1.2 part 3, section 3.8 (manifest), and
