@@ -95,6 +95,34 @@ func TestEncryptionLimits(t *testing.T) {
 	}
 }
 
+// Argon2id is capped at 256 MiB of memory and 1 GiB of memory times
+// passes for one key; what LibreOffice writes passes. The parameters are
+// checked directly, so that no derivation runs if the caps are wrong.
+func TestArgonCaps(t *testing.T) {
+	cases := []struct {
+		mem, passes, lanes int
+		ok                 bool
+	}{
+		{65536, 3, 4, true},      // LibreOffice
+		{262144, 4, 4, true},     // 256 MiB, 1 GiB of work
+		{262152, 1, 4, false},    // over 256 MiB
+		{262144, 5, 4, false},    // over 1 GiB of work
+		{131072, 9, 4, false},    // over 1 GiB of work
+		{1 << 20, 1, 4, false},   // the old cap
+		{1048576, 64, 64, false}, // far over
+		{8, MaxArgonIterations, 1, true},
+	}
+	for _, c := range cases {
+		err := checkArgon(&Encryption{ArgonMemory: c.mem, ArgonIterates: c.passes, ArgonLanes: c.lanes})
+		if (err == nil) != c.ok || (err != nil && !errors.Is(err, ErrWork)) {
+			t.Errorf("%d KiB, %d passes, %d lanes: %v", c.mem, c.passes, c.lanes, err)
+		}
+	}
+	if maxPackageArgon > 2*maxArgonWork {
+		t.Errorf("package Argon2 total %d KiB-passes is over twice the per-key cap %d", maxPackageArgon, maxArgonWork)
+	}
+}
+
 // pbkdf2SHA1 gives what crypto/pbkdf2 gives, for key sizes of one block
 // and of several.
 func TestPBKDF2MatchesStdlib(t *testing.T) {

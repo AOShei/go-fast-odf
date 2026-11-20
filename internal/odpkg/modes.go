@@ -11,11 +11,11 @@ import (
 // work of a derivation is its memory times its passes. They are variables
 // only so that the fuzz test can lower them.
 var (
-	MaxArgonMemory           = 1 << 20 // 1 GiB
+	MaxArgonMemory           = 1 << 18 // 256 MiB
 	MaxArgonIterations       = 64
 	MaxArgonLanes            = 64
-	maxArgonWork       int64 = 4 << 20 // KiB-passes: 1 GiB four times over
-	maxPackageArgon    int64 = 8 << 20
+	maxArgonWork       int64 = 1 << 20 // KiB-passes: 256 MiB four times over, 1 GiB
+	maxPackageArgon    int64 = 2 << 20 // two such keys in all
 )
 
 // checkArgon checks the Argon2id parameters of a manifest entry.

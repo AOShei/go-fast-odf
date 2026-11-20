@@ -6,6 +6,12 @@ been released yet.
 
 ## [Unreleased]
 
+### Changed: decryption limits (branch `review-2`)
+
+- Argon2id is capped at 256 MiB of memory per key (was 1 GiB), memory
+  times passes at 1 GiB per key (was 4 GiB) and 2 GiB per package (was
+  8 GiB). LibreOffice's 64 MiB, 3 passes, 4 lanes is well within.
+
 ### Added: decryption (branch `phase-6-decryption`)
 
 - Packages encrypted with AES-CBC and PBKDF2 (SHA-1 or SHA-256 start
