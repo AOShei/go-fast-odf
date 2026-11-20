@@ -10,7 +10,7 @@ if err != nil { ... }
 fmt.Println(doc.Markdown())
 ```
 
-**Status: phase 2.** Text documents (`.odt`), spreadsheets (`.ods`), presentations (`.odp`), their templates, and the flat XML variants (`.fodt`, `.fods`, `.fodp`) are read. Decryption comes in phase 3. See `IMPLEMENTATION_PLAN.md`.
+**Status: phase 2.** Text documents (`.odt`), spreadsheets (`.ods`), presentations (`.odp`), their templates, and the flat XML variants (`.fodt`, `.fods`, `.fodp`) are read. Password-protected packages are decrypted (AES-CBC with PBKDF2; ODF 1.4's AES-GCM with Argon2id). See `IMPLEMENTATION_PLAN.md`.
 
 ## API
 
@@ -140,7 +140,18 @@ Codes of this library:
 
 ## Errors
 
-`ErrMalformed` (not a zip archive, no `content.xml`, archive too damaged), `ErrUnsupported` (not OpenDocument; a kind not read yet; an encrypted file when a password is given), `ErrPasswordRequired` (encrypted, no password), `ErrLimitExceeded`, `ErrNoPartsSelected`.
+`ErrMalformed` (not a zip archive, no `content.xml`, archive too damaged), `ErrUnsupported` (not OpenDocument; a kind not read yet; an encryption this version does not decrypt), `ErrPasswordRequired` (encrypted, no password), `ErrWrongPassword` (the checksum or authentication tag does not match the password given), `ErrLimitExceeded` (also: the manifest asks for more key-derivation work than the caps below), `ErrNoPartsSelected`.
+
+## Encryption
+
+With `Options.Password`, an encrypted package is decrypted:
+
+- AES-CBC (256, 192 or 128-bit) with a PBKDF2 key, from a SHA-1 or SHA-256 start key, checked by `SHA1/1K` or `sha256-1k` checksum: what ODF 1.2 and 1.3 packages hold, and what LibreOffice writes by default.
+- The `encrypted-package` member of ODF 1.4, which holds the whole package: AES-GCM with an Argon2id key (LibreOffice's experimental `loext:` parameter names and ODF 1.4's `manifest:` ones). Argon2id and BLAKE2b are in `internal/argon2`, written from RFC 9106 and RFC 7693.
+
+Blowfish CFB (ODF 1.0 and 1.1, OpenOffice.org 1 and 2) is not decrypted: `ErrUnsupported`. Without a password an encrypted file is `ErrPasswordRequired`; a password is never guessed. The password is passed to embedded documents as core says; objects inside an encrypted package are decrypted with it. `Metadata.Encrypted` is set on a decrypted document.
+
+The manifest sets the cost of a key, so it is capped: PBKDF2 at 10 million iterations for a member and 30 million for a package; Argon2id at 1 GiB of memory, 64 passes, 64 lanes, and memory times passes at 4 GiB (8 GiB for a package). Inflated bytes of decrypted members count against `MaxDecodedBytes` like any others.
 
 ## Limits
 
@@ -170,7 +181,7 @@ In every kind of document, `draw:object` and `draw:object-ole` in a frame are re
 
 ## Not read (yet)
 
-Drawings (`.odg`), charts, formulas and databases as documents in their own right; decryption; documents held whole inside a flat file's `draw:object`; change-tracked insertions are not marked in the text; master-page text of slides; the OpenOffice 1.x formats (`.sxw`).
+Drawings (`.odg`), charts, formulas and databases as documents in their own right; decryption of Blowfish (ODF 1.0, 1.1); documents held whole inside a flat file's `draw:object`; change-tracked insertions are not marked in the text; master-page text of slides; the OpenOffice 1.x formats (`.sxw`).
 
 ## Provenance
 

@@ -6,6 +6,23 @@ been released yet.
 
 ## [Unreleased]
 
+### Added: decryption (branch `phase-6-decryption`)
+
+- Packages encrypted with AES-CBC and PBKDF2 (SHA-1 or SHA-256 start
+  key; `SHA1/1K` or `sha256-1k` checksum) are decrypted with
+  `Options.Password`; a password that does not match gives
+  `ErrWrongPassword`, none still `ErrPasswordRequired`.
+- ODF 1.4's `encrypted-package` (AES-GCM, Argon2id) is decrypted and read
+  as the package it holds. `internal/argon2` implements Argon2id and
+  BLAKE2b from RFC 9106 and RFC 7693, tested on their vectors.
+- Caps on the key-derivation work a manifest may ask for (PBKDF2
+  iterations; Argon2 memory, passes, lanes): over one gives
+  `ErrLimitExceeded`. Decrypted members are inflated within the decode
+  budget.
+- `Metadata.Encrypted` is set on every decrypted document.
+- `testdata/encrypted`: LibreOffice 26.8 files, password `go-fast`.
+- Blowfish CFB (ODF 1.0, 1.1) gives `ErrUnsupported`.
+
 ### Added: embedded documents in the command
 
 - Pins go-fast-core `787b056` (`RenderOptions.Children`).

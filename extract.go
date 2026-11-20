@@ -186,10 +186,12 @@ var mimeOf = map[string]string{
 //     damaged to read.
 //   - ErrUnsupported: a zip archive or XML document that is not
 //     OpenDocument; an OpenDocument file of a kind this version does not
-//     read (drawings, charts, formulas, databases); an encrypted file
-//     when a password is given (decryption is not implemented yet).
+//     read (drawings, charts, formulas, databases); an encryption this
+//     version does not decrypt (Blowfish, of ODF 1.0 and 1.1).
 //   - ErrPasswordRequired: the file is encrypted and Options.Password is
 //     empty.
+//   - ErrWrongPassword: the file is encrypted and its checksum or
+//     authentication tag does not match Options.Password.
 //   - ErrLimitExceeded: the input is larger than Limits.MaxInputBytes, or
 //     a limit was reached before anything could be read.
 //   - ErrNoPartsSelected: Options.Parts selects none of the parts.
