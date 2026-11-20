@@ -16,6 +16,14 @@ been released yet.
   becomes a break; it is a border and gives no block. The adjacency
   check that took a break back when the next paragraph shared its
   border, and the paragraph-border reading only it used, are gone.
+- The "Horizontal Line" break is now read wherever paragraphs are read,
+  not only in the body: list items, frames and text boxes, shapes,
+  presentation and drawing text, headers and footers (the break goes
+  with the header's or footer's blocks), footnotes and endnotes, comments,
+  speaker notes and tracked deletions (the break follows the note block,
+  whose text cannot hold it). Not in table cells: a cell's paragraphs
+  become its text, so the empty paragraph is left out as before.
+  Headings in that style are not breaks.
 
 ### Changed: stored kinds (branch `stored-kinds`)
 

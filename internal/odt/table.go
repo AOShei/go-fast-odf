@@ -131,7 +131,7 @@ func (r *reader) row(c ctxt, t *tableIn, header bool) {
 		inner := ctxt{hidden: c.hidden}
 		var content []gofastcore.Block
 		r.blocks(inner, &content)
-		text, _, hid, rest := r.flatten(content)
+		text, _, hid, rest := r.flatten(content, false)
 		cell.text, cell.hidden = text, hid
 		t.after = append(t.after, rest...)
 		if cell.repeat <= 0 {
