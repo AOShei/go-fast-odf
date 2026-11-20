@@ -110,7 +110,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		images    = flags.String("images", "meta", "pictures: meta (a block for each, with its place, size and alternative text), data (their bytes too) or none")
 		spans     = flags.Bool("spans", false, "report bold, italic and the like, and links, as spans")
 		cells     = flags.Bool("cells", false, "report the formulas, types and stored values of spreadsheet cells")
-		password  = flags.String("password", "", "password of an encrypted file (AES with PBKDF2 or Argon2id; not Blowfish), also tried on embedded documents")
+		password  = flags.String("password", "", "password of an encrypted file (AES with PBKDF2 or Argon2id, Blowfish), also tried on embedded documents")
 		maxCells  = flags.Int64("max-cells", 0, "table cells kept from a document (0: the default, 20 million; -1: no limit)")
 		maxBytes  = flags.Int64("max-decoded-bytes", 0, "decompressed bytes read from a file (0: the default, 2 GiB; -1: no limit)")
 		maxText   = flags.Int64("max-text-bytes", 0, "bytes of text a document may hold (0: the default, 256 MiB; -1: no limit)")

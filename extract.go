@@ -187,7 +187,9 @@ var mimeOf = map[string]string{
 //   - ErrUnsupported: a zip archive or XML document that is not
 //     OpenDocument; an OpenDocument file of a kind this version does not
 //     read (drawings, charts, formulas, databases); an encryption this
-//     version does not decrypt (Blowfish, of ODF 1.0 and 1.1).
+//     version does not decrypt (an algorithm, key derivation or checksum
+//     other than AES-CBC, AES-GCM, Blowfish CFB, PBKDF2, Argon2id, SHA-1
+//     and SHA-256).
 //   - ErrPasswordRequired: the file is encrypted and Options.Password is
 //     empty.
 //   - ErrWrongPassword: the file is encrypted and its checksum or

@@ -78,15 +78,10 @@ func TestDecryptGCMArgon2id(t *testing.T) {
 	checkDecrypted(t, encCase{"gcm-argon2id-odf14.odt", "odt", []string{"Encrypted text body: the password is go-fast."}})
 }
 
-// Blowfish CFB (ODF 1.0, 1.1) is not decrypted.
-func TestBlowfishUnsupported(t *testing.T) {
-	data := readFixture(t, "blowfish-odf11.odt")
-	if _, err := extractFile(data, fixturePassword); !errors.Is(err, gofastcore.ErrUnsupported) {
-		t.Errorf("with the password: %v", err)
-	}
-	if _, err := extractFile(data, ""); !errors.Is(err, gofastcore.ErrPasswordRequired) {
-		t.Errorf("without a password: %v", err)
-	}
+// ODF 1.0 and 1.1: Blowfish CFB, PBKDF2 from a SHA-1 start key, 16-byte
+// key (the default when the manifest names none).
+func TestDecryptBlowfish(t *testing.T) {
+	checkDecrypted(t, encCase{"blowfish-odf11.odt", "odt", []string{"Encrypted text body: the password is go-fast."}})
 }
 
 func TestDecryptCBC(t *testing.T) {

@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/AOShei/go-fast-odf/internal/argon2"
+	"github.com/AOShei/go-fast-odf/internal/blowfish"
 )
 
 // Limits on Argon2id. Memory is in KiB, as the manifest gives it; the
@@ -49,5 +50,9 @@ func (p *Package) argonKey(c *cipherSpec, start []byte) ([]byte, error) {
 
 // blowfishCFB decrypts Blowfish in 64-bit CFB mode.
 func blowfishCFB(key, iv, ct []byte) ([]byte, error) {
-	return nil, fmt.Errorf("%w: Blowfish CFB (ODF 1.0 and 1.1) is not implemented", ErrCipher)
+	c, err := blowfish.New(key)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrDamaged, err)
+	}
+	return c.DecryptCFB(iv, ct), nil
 }

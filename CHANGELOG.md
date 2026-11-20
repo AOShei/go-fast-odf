@@ -21,7 +21,8 @@ been released yet.
   budget.
 - `Metadata.Encrypted` is set on every decrypted document.
 - `testdata/encrypted`: LibreOffice 26.8 files, password `go-fast`.
-- Blowfish CFB (ODF 1.0, 1.1) gives `ErrUnsupported`.
+- Blowfish CFB (ODF 1.0, 1.1) is decrypted: `internal/blowfish`, its
+  tables computed from pi with `math/big`, tested on Schneier's vectors.
 
 ### Added: embedded documents in the command
 
