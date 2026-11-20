@@ -39,7 +39,8 @@ func TestErrors(t *testing.T) {
 		{"xml not odf", []byte(`<?xml version="1.0"?><html><body/></html>`), nil, gofastcore.ErrUnsupported},
 		{"epub", pkg(t, "application/epub+zip", member{name: "x.xhtml", data: "<x/>"}), nil, gofastcore.ErrUnsupported},
 		{"encrypted", enc, nil, gofastcore.ErrPasswordRequired},
-		{"encrypted with password", enc, &gofastcore.Options{Password: "pw"}, gofastcore.ErrUnsupported},
+		// The fixture's initialisation vector is 3 bytes, not 16.
+		{"encrypted with password, damaged", enc, &gofastcore.Options{Password: "pw"}, gofastcore.ErrMalformed},
 		{"no content", pkg(t, textMIME), nil, gofastcore.ErrMalformed},
 		{"input limit", textDoc(t, "", "<text:p>x</text:p>"), &gofastcore.Options{Limits: gofastcore.Limits{MaxInputBytes: 10}}, gofastcore.ErrLimitExceeded},
 		{"no parts", textDoc(t, "", "<text:p>x</text:p>"), &gofastcore.Options{Parts: gofastcore.PartRange{First: 2, Last: 3}}, gofastcore.ErrNoPartsSelected},

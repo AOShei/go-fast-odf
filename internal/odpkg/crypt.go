@@ -1,0 +1,331 @@
+package odpkg
+
+import (
+	"bytes"
+	"compress/flate"
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/pbkdf2"
+	"crypto/sha1"
+	"crypto/sha256"
+	"crypto/subtle"
+	"encoding/base64"
+	"errors"
+	"fmt"
+	"hash"
+	"io"
+	"strings"
+
+	"github.com/AOShei/go-fast-odf/internal/clean"
+)
+
+// Errors of decryption. The extractor maps them to the shared errors.
+var (
+	// ErrWrongPassword: the member's checksum, or its authentication tag,
+	// does not match what the password gives.
+	ErrWrongPassword = errors.New("odpkg: wrong password")
+	// ErrCipher: the member is encrypted in a way this package does not
+	// decrypt (an algorithm, key derivation or checksum it does not know).
+	ErrCipher = errors.New("odpkg: unsupported encryption")
+	// ErrWork: the manifest asks for more key-derivation work than the
+	// limits allow.
+	ErrWork = errors.New("odpkg: key derivation over the limit")
+)
+
+// Limits on the work a manifest may ask for. A real file asks for far
+// less: LibreOffice writes 100000 PBKDF2 iterations, and Argon2id with 64
+// MiB, 3 passes and 4 lanes.
+const (
+	// MaxIterations is the largest PBKDF2 iteration count accepted for
+	// one member.
+	MaxIterations = 10_000_000
+	// maxPackageIterations bounds the PBKDF2 iterations of all members
+	// of a package together.
+	maxPackageIterations = 30_000_000
+)
+
+// Names the manifest uses. ODF 1.2 part 3, section 3.8 (manifest), and
+// what LibreOffice writes.
+const (
+	nsManifest = "urn:oasis:names:tc:opendocument:xmlns:manifest:1.0#"
+	algAES256  = "http://www.w3.org/2001/04/xmlenc#aes256-cbc"
+	algAES192  = "http://www.w3.org/2001/04/xmlenc#aes192-cbc"
+	algAES128  = "http://www.w3.org/2001/04/xmlenc#aes128-cbc"
+	algGCM256  = "http://www.w3.org/2009/xmlenc11#aes256-gcm"
+	algGCM192  = "http://www.w3.org/2009/xmlenc11#aes192-gcm"
+	algGCM128  = "http://www.w3.org/2009/xmlenc11#aes128-gcm"
+	algBlowfsh = "Blowfish CFB"
+)
+
+// cipherSpec is what decrypting a member takes, resolved from the manifest.
+type cipherSpec struct {
+	mode     string // "cbc", "gcm", "blowfish"
+	iv       []byte
+	checksum []byte
+	sum      func() hash.Hash // of the checksum, or nil
+	start    func() hash.Hash // of the start key
+	argon    bool
+	salt     []byte
+	iter     int
+	keySize  int
+}
+
+func b64(s string) ([]byte, error) {
+	s = strings.TrimSpace(s)
+	if b, err := base64.StdEncoding.DecodeString(s); err == nil {
+		return b, nil
+	}
+	return base64.RawStdEncoding.DecodeString(strings.TrimRight(s, "="))
+}
+
+// resolve checks what the manifest says of a member against what can be
+// decrypted.
+func resolve(e *Encryption) (*cipherSpec, error) {
+	var c cipherSpec
+	var err error
+	switch e.Algorithm {
+	case algAES256, algAES192, algAES128:
+		c.mode = "cbc"
+	case algGCM256, algGCM192, algGCM128:
+		c.mode = "gcm"
+	case algBlowfsh:
+		c.mode = "blowfish"
+	default:
+		return nil, fmt.Errorf("%w: algorithm %q", ErrCipher, clean.Label(e.Algorithm))
+	}
+	if c.iv, err = b64(e.IV); err != nil {
+		return nil, fmt.Errorf("%w: initialisation vector is not base64", ErrDamaged)
+	}
+	switch {
+	case c.mode == "cbc" && len(c.iv) != aes.BlockSize, c.mode == "gcm" && len(c.iv) == 0, c.mode == "blowfish" && len(c.iv) != 8:
+		return nil, fmt.Errorf("%w: initialisation vector of %d bytes", ErrDamaged, len(c.iv))
+	}
+	switch e.StartKey {
+	case "", "SHA1", "http://www.w3.org/2000/09/xmldsig#sha1":
+		c.start = sha1.New
+	case "SHA256", "http://www.w3.org/2000/09/xmldsig#sha256", "http://www.w3.org/2001/04/xmlenc#sha256":
+		c.start = sha256.New
+	default:
+		return nil, fmt.Errorf("%w: start key generation %q", ErrCipher, clean.Label(e.StartKey))
+	}
+	switch e.ChecksumType {
+	case "":
+		if c.mode != "gcm" {
+			return nil, fmt.Errorf("%w: no checksum type", ErrCipher)
+		}
+	case "SHA1/1K", nsManifest + "sha1-1k":
+		c.sum = sha1.New
+	case "SHA256/1K", nsManifest + "sha256-1k":
+		c.sum = sha256.New
+	default:
+		return nil, fmt.Errorf("%w: checksum type %q", ErrCipher, clean.Label(e.ChecksumType))
+	}
+	if c.sum != nil {
+		if c.checksum, err = b64(e.Checksum); err != nil || len(c.checksum) == 0 {
+			return nil, fmt.Errorf("%w: checksum is not base64", ErrDamaged)
+		}
+	}
+	if c.salt, err = b64(e.Salt); err != nil {
+		return nil, fmt.Errorf("%w: salt is not base64", ErrDamaged)
+	}
+	c.keySize = e.KeySize
+	if c.keySize == 0 {
+		c.keySize = 16 // the default of ODF 1.2 part 3, section 3.8.6
+	}
+	switch c.mode {
+	case "cbc", "gcm":
+		want := map[string]int{algAES256: 32, algAES192: 24, algAES128: 16, algGCM256: 32, algGCM192: 24, algGCM128: 16}[e.Algorithm]
+		if e.KeySize == 0 {
+			c.keySize = want
+		}
+		if c.keySize != want {
+			return nil, fmt.Errorf("%w: key size %d for %s", ErrDamaged, c.keySize, clean.Label(e.Algorithm))
+		}
+	case "blowfish":
+		if c.keySize < 4 || c.keySize > 56 {
+			return nil, fmt.Errorf("%w: Blowfish key size %d", ErrDamaged, c.keySize)
+		}
+	}
+	switch e.Derivation {
+	case "PBKDF2", "http://www.w3.org/2009/xmlenc11#pbkdf2":
+		c.iter = e.Iterations
+		if c.iter < 1 {
+			return nil, fmt.Errorf("%w: PBKDF2 iteration count %d", ErrDamaged, c.iter)
+		}
+		if c.iter > MaxIterations {
+			return nil, fmt.Errorf("%w: PBKDF2 iteration count %d, limit %d", ErrWork, c.iter, MaxIterations)
+		}
+	case argonLO, nsManifest + "argon2id":
+		c.argon = true
+		if err := checkArgon(e); err != nil {
+			return nil, err
+		}
+	default:
+		return nil, fmt.Errorf("%w: key derivation %q", ErrCipher, clean.Label(e.Derivation))
+	}
+	return &c, nil
+}
+
+const argonLO = "urn:org:documentfoundation:names:experimental:office:manifest:argon2id"
+
+// SetPassword sets the password encrypted members are opened with.
+func (p *Package) SetPassword(pw string) { p.password = pw }
+
+// key derives the key of a member, charging the work to the package.
+func (p *Package) key(c *cipherSpec) ([]byte, error) {
+	h := c.start()
+	h.Write([]byte(p.password))
+	start := h.Sum(nil)
+	if c.argon {
+		return p.argonKey(c, start)
+	}
+	if p.kdfWork.Add(int64(c.iter)) > maxPackageIterations {
+		return nil, fmt.Errorf("%w: the members ask for more than %d PBKDF2 iterations in all", ErrWork, maxPackageIterations)
+	}
+	return pbkdf2.Key(sha1.New, string(start), c.salt, c.iter, c.keySize)
+}
+
+// decrypt returns a member's plaintext: still compressed, as raw DEFLATE.
+func (p *Package) decrypt(name string, ct []byte) ([]byte, error) {
+	e := p.manifest[name].Encryption
+	c, err := resolve(e)
+	if err != nil {
+		return nil, err
+	}
+	p.keyMu.Lock()
+	key, ok := p.keys[name]
+	p.keyMu.Unlock()
+	if !ok {
+		if key, err = p.key(c); err != nil {
+			return nil, err
+		}
+		p.keyMu.Lock()
+		if p.keys == nil {
+			p.keys = map[string][]byte{}
+		}
+		p.keys[name] = key
+		p.keyMu.Unlock()
+	}
+	var pt []byte
+	switch c.mode {
+	case "cbc":
+		if len(ct) == 0 || len(ct)%aes.BlockSize != 0 {
+			return nil, fmt.Errorf("%w: %s: encrypted data of %d bytes is not whole blocks", ErrDamaged, clean.Label(name), len(ct))
+		}
+		block, err := aes.NewCipher(key)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %v", ErrCipher, err)
+		}
+		pt = make([]byte, len(ct))
+		cipher.NewCBCDecrypter(block, c.iv).CryptBlocks(pt, ct)
+		// W3C padding: the last byte gives the length of the padding;
+		// the other padding bytes may be anything.
+		pad := int(pt[len(pt)-1])
+		if pad < 1 || pad > aes.BlockSize {
+			pad = 0
+		}
+		// For data under 1K, writers differ on whether the digest covers
+		// the padding; either is taken.
+		if !checksumOK(c, pt) && (pad == 0 || !checksumOK(c, pt[:len(pt)-pad])) {
+			return nil, ErrWrongPassword
+		}
+		if pad == 0 {
+			return nil, fmt.Errorf("%w: %s: padding of the encrypted data is not valid", ErrDamaged, clean.Label(name))
+		}
+		pt = pt[:len(pt)-pad]
+	case "gcm":
+		block, err := aes.NewCipher(key)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %v", ErrCipher, err)
+		}
+		aead, err := cipher.NewGCMWithNonceSize(block, len(c.iv))
+		if err != nil {
+			return nil, fmt.Errorf("%w: %v", ErrCipher, err)
+		}
+		if len(ct) < aead.Overhead() {
+			return nil, fmt.Errorf("%w: %s: encrypted data of %d bytes is shorter than its tag", ErrDamaged, clean.Label(name), len(ct))
+		}
+		pt, err = aead.Open(ct[:0], c.iv, ct, nil)
+		if err != nil {
+			return nil, ErrWrongPassword
+		}
+		if c.sum != nil && !checksumOK(c, pt) {
+			return nil, ErrWrongPassword
+		}
+	case "blowfish":
+		pt, err = blowfishCFB(key, c.iv, ct)
+		if err != nil {
+			return nil, err
+		}
+		if !checksumOK(c, pt) {
+			return nil, ErrWrongPassword
+		}
+	}
+	return pt, nil
+}
+
+// checksumOK checks the digest of the first 1024 bytes of the decrypted,
+// still compressed data against the manifest's.
+func checksumOK(c *cipherSpec, pt []byte) bool {
+	h := c.sum()
+	h.Write(pt[:min(len(pt), 1024)])
+	return subtle.ConstantTimeCompare(h.Sum(nil), c.checksum) == 1
+}
+
+// openEncrypted decrypts a member and returns a reader of its inflated
+// content, charged to the budget as any member's is.
+func (p *Package) openEncrypted(name string) (io.ReadCloser, error) {
+	f := p.files[name]
+	rc, err := f.Open()
+	if err != nil {
+		return nil, fmt.Errorf("%w: %s: %v", ErrDamaged, clean.Label(name), err)
+	}
+	var src io.Reader = rc
+	if f.Method != 0 {
+		// Compressed by the archive as well (not what a writer does):
+		// what comes out is charged like any decompressed data.
+		src = &budgetReader{rc: rc, p: p}
+	}
+	ct, err := io.ReadAll(io.LimitReader(src, p.Remaining()+int64(f.CompressedSize64)+1))
+	rc.Close()
+	if err != nil {
+		if errors.Is(err, ErrBudget) {
+			return nil, err
+		}
+		return nil, fmt.Errorf("%w: %s: %v", ErrDamaged, clean.Label(name), err)
+	}
+	pt, err := p.decrypt(name, ct)
+	if err != nil {
+		return nil, err
+	}
+	return &budgetReader{rc: io.NopCloser(flate.NewReader(bytes.NewReader(pt))), p: p}, nil
+}
+
+// Check decrypts a member to see whether the password opens it, without
+// reading it.
+func (p *Package) Check(name string) error {
+	rc, err := p.Open(name)
+	if err != nil {
+		return err
+	}
+	return rc.Close()
+}
+
+// ReadEncryptedPackage decrypts and inflates the member that holds a whole
+// package (ODF 1.4's encrypted-package), and returns its bytes. They are
+// charged to the budget.
+func (p *Package) ReadEncryptedPackage(name string) ([]byte, error) {
+	rc, err := p.Open(name)
+	if err != nil {
+		return nil, err
+	}
+	defer rc.Close()
+	b, err := io.ReadAll(rc)
+	if err != nil {
+		if errors.Is(err, ErrBudget) {
+			return nil, err
+		}
+		return nil, fmt.Errorf("%w: %s: %v", ErrDamaged, clean.Label(name), err)
+	}
+	return b, nil
+}

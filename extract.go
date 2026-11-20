@@ -244,7 +244,17 @@ func (e *Extractor) Extract(ctx context.Context, r io.ReaderAt, size int64, opts
 		if o.Password == "" {
 			return nil, fmt.Errorf("gofastodf: the document is encrypted: %w", gofastcore.ErrPasswordRequired)
 		}
-		return nil, fmt.Errorf("gofastodf: the document is encrypted, and decryption is not implemented: %w", gofastcore.ErrUnsupported)
+		pkg.SetPassword(o.Password)
+		if !pkg.Has("content.xml") && pkg.Encrypted(encryptedPackage) {
+			return e.extractWhole(ctx, pkg, decode, size, &o)
+		}
+		if pkg.Has("content.xml") {
+			// The password is checked on the content first, so that a
+			// wrong one is an error rather than a damaged stream.
+			if err := pkg.Check("content.xml"); err != nil {
+				return nil, wrap(err)
+			}
+		}
 	}
 	if !pkg.Has("content.xml") {
 		if pkg.Recovered() != nil {
@@ -256,7 +266,7 @@ func (e *Extractor) Extract(ctx context.Context, r io.ReaderAt, size int64, opts
 	doc := gofastcore.New("odt")
 	md := meta.Read(pkg)
 	doc.Metadata = md.Metadata
-	if pkg.Encrypted("meta.xml") {
+	if encrypted(pkg) || pkg.Encrypted("meta.xml") || ctx.Value(innerKey{}) != nil {
 		doc.Metadata.Encrypted = true
 	}
 	warn := func(sev gofastcore.Severity, code, msg string) { doc.Warn(sev, code, msg) }
@@ -386,6 +396,38 @@ func (e *Extractor) Extract(ctx context.Context, r io.ReaderAt, size int64, opts
 	return doc, nil
 }
 
+// encryptedPackage is the member in which ODF 1.4 encrypts a whole
+// package (LibreOffice writes it with AES-GCM and Argon2id): its content,
+// decrypted and inflated, is a package in its own right.
+const encryptedPackage = "encrypted-package"
+
+// innerKey marks the context of a package read from an encrypted-package
+// member, which must not hold another.
+type innerKey struct{}
+
+// extractWhole reads a package held, encrypted, in one member.
+func (e *Extractor) extractWhole(ctx context.Context, pkg *odpkg.Package, decode *gofastcore.DecodeBudget, size int64, o *gofastcore.Options) (*gofastcore.Document, error) {
+	if ctx.Value(innerKey{}) != nil {
+		return nil, fmt.Errorf("gofastodf: an encrypted package holds another: %w", gofastcore.ErrMalformed)
+	}
+	inner, err := pkg.ReadEncryptedPackage(encryptedPackage)
+	if err != nil {
+		return nil, wrap(err)
+	}
+	pkg.Sync(decode)
+	in := *o
+	// The inner package was counted against the decompression limit as
+	// it was inflated; it is read whatever its size.
+	in.Limits.MaxInputBytes = int64(len(inner)) + 1
+	doc, err := e.Extract(context.WithValue(ctx, innerKey{}, true), bytes.NewReader(inner), int64(len(inner)), &in)
+	if err != nil {
+		return nil, err
+	}
+	doc.Source.Size = size
+	doc.Metadata.Encrypted = true
+	return doc, nil
+}
+
 // encrypted reports whether the document's content is encrypted: its
 // content stream is, or it has none and some member is (an encrypted
 // package within the package).
@@ -411,8 +453,12 @@ func wrap(err error) error {
 	switch {
 	case errors.Is(err, odpkg.ErrNotPackage):
 		shared = gofastcore.ErrUnsupported
-	case errors.Is(err, odpkg.ErrBudget), errors.Is(err, odpkg.ErrTooManyParts):
+	case errors.Is(err, odpkg.ErrBudget), errors.Is(err, odpkg.ErrTooManyParts), errors.Is(err, odpkg.ErrWork):
 		shared = gofastcore.ErrLimitExceeded
+	case errors.Is(err, odpkg.ErrWrongPassword):
+		shared = gofastcore.ErrWrongPassword
+	case errors.Is(err, odpkg.ErrCipher):
+		shared = gofastcore.ErrUnsupported
 	case errors.Is(err, odpkg.ErrEncrypted):
 		shared = gofastcore.ErrPasswordRequired
 	}
