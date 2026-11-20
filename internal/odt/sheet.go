@@ -18,6 +18,10 @@ import (
 // per run of cells in a row instead of as one table.
 const WarnRegionSplit = "odf.region_split"
 
+// WarnFormulaNoValue: cells hold formulas with no stored result, so they
+// show nothing; the message says how many on the sheet.
+const WarnFormulaNoValue = "odf.formula_no_value"
+
 // Bounds on a sheet's coordinates. A sheet of LibreOffice has at most
 // 16,384 columns and 1,048,576 rows; a file can say anything.
 const (
@@ -64,6 +68,7 @@ type sheetIn struct {
 	extra   []gofastcore.Block // shapes on the sheet
 	choices map[string]*[4]int // validation name -> bounds of the cells that use it
 	order   []string
+	noValue int64 // formula cells with no stored result
 }
 
 // placed is a note that stands at a cell.
@@ -276,6 +281,9 @@ func (r *reader) sheet(n int) gofastcore.Part {
 	row := 0
 	r.sheetBody(sh, &row, name)
 	part.Blocks = r.regions(sh, &part)
+	if sh.noValue > 0 {
+		part.Warn(gofastcore.SeverityInfo, WarnFormulaNoValue, strconv.FormatInt(sh.noValue, 10)+" formulas are stored without a result; their cells are empty")
+	}
 	if len(sh.extra) > 0 {
 		part.Blocks = append(part.Blocks, sh.extra...)
 	}
@@ -362,6 +370,7 @@ func (r *reader) sheetRow(sh *sheetIn, row *int) {
 	}
 	var cells []sheetCell
 	var notes []placed
+	var noValue int64
 	col := 0
 	depth := s.Depth()
 	for {
@@ -420,6 +429,9 @@ func (r *reader) sheetRow(sh *sheetIn, row *int) {
 			hid |= reasons(&run{eff: cs})
 		}
 		c.text, c.hidden = text, hid
+		if formula != "" && text == "" && value == "" {
+			noValue += int64(min(reps, maxSheetCols-col))
+		}
 		var more cellMore
 		if r.opts.Cells {
 			more.formula = clean.Label(formula)
@@ -477,6 +489,7 @@ func (r *reader) sheetRow(sh *sheetIn, row *int) {
 		}
 	}
 	sh.notes = append(sh.notes, notes...)
+	sh.noValue += noValue * int64(*row-top)
 }
 
 // choose records that cells use a validation.

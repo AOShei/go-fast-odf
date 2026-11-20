@@ -6,6 +6,13 @@ been released yet.
 
 ## [Unreleased]
 
+### Added: sheets and slides (branch `phase-7-sheets-slides`)
+
+- `odf.formula_no_value` (info): a sheet's cells that hold a formula and
+  no stored result (no `office:*value` attribute, no text) are counted,
+  one warning per sheet, worded as go-fast-ooxml's
+  `ooxml.formula_no_value`. The formulas stay in `Table.Cells`.
+
 ### Changed: decryption limits (branch `review-2`)
 
 - Argon2id is capped at 256 MiB of memory per key (was 1 GiB), memory

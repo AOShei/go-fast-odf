@@ -134,6 +134,7 @@ Codes of this library:
 |---|---|
 | `odf.unread_content` | The document holds content this version does not read: an embedded formula or chart it could not read, a document held whole in a flat file, plug-ins, pictures over 64 MiB held in a flat file. The message counts them |
 | `odf.region_split` | An area of a sheet with thinly spread cells was written as one table per run of cells in a row |
+| `odf.formula_no_value` | Cells of a sheet hold formulas with no stored result (no value attribute, no text), so they show nothing; one warning per sheet with the count (info). The formulas stay in `Table.Cells` |
 | `odf.part_damaged` | A supporting stream (manifest, styles, metadata) could not be read to its end; what was read is used |
 | `odf.property_truncated` | A metadata value was cut at 64 KiB, or keywords or user-defined properties beyond 256 were left out |
 | `odf.control_characters_removed` | Control characters with no meaning as text were removed |
