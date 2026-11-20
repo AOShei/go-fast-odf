@@ -72,6 +72,12 @@ func checkDecrypted(t *testing.T, c encCase) {
 	}
 }
 
+// ODF 1.4: the whole package is encrypted, in one member, with AES-GCM and
+// a key from Argon2id (64 MiB, 3 passes, 4 lanes).
+func TestDecryptGCMArgon2id(t *testing.T) {
+	checkDecrypted(t, encCase{"gcm-argon2id-odf14.odt", "odt", []string{"Encrypted text body: the password is go-fast."}})
+}
+
 func TestDecryptCBC(t *testing.T) {
 	for _, c := range encCases {
 		t.Run(c.file, func(t *testing.T) { checkDecrypted(t, c) })

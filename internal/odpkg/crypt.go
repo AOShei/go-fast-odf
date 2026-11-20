@@ -68,6 +68,7 @@ type cipherSpec struct {
 	salt     []byte
 	iter     int
 	keySize  int
+	enc      *Encryption
 }
 
 func b64(s string) ([]byte, error) {
@@ -81,7 +82,7 @@ func b64(s string) ([]byte, error) {
 // resolve checks what the manifest says of a member against what can be
 // decrypted.
 func resolve(e *Encryption) (*cipherSpec, error) {
-	var c cipherSpec
+	c := cipherSpec{enc: e}
 	var err error
 	switch e.Algorithm {
 	case algAES256, algAES192, algAES128:
@@ -241,6 +242,11 @@ func (p *Package) decrypt(name string, ct []byte) ([]byte, error) {
 		aead, err := cipher.NewGCMWithNonceSize(block, len(c.iv))
 		if err != nil {
 			return nil, fmt.Errorf("%w: %v", ErrCipher, err)
+		}
+		// LibreOffice writes the nonce again before the ciphertext, as
+		// XML Encryption 1.1 does (section 5.2.4); the tag follows it.
+		if bytes.HasPrefix(ct, c.iv) {
+			ct = ct[len(c.iv):]
 		}
 		if len(ct) < aead.Overhead() {
 			return nil, fmt.Errorf("%w: %s: encrypted data of %d bytes is shorter than its tag", ErrDamaged, clean.Label(name), len(ct))
