@@ -113,7 +113,7 @@ func TestRenderFlags(t *testing.T) {
 		t.Errorf("-stored: %q", got)
 	}
 	var out, errs bytes.Buffer
-	if code := run(context.Background(), []string{"-exclude-display=unknown", a}, &out, &errs); code != 2 || !strings.Contains(errs.String(), "no_ink") {
+	if code := run(context.Background(), []string{"-exclude-display=unknown", a}, &out, &errs); code != 2 || !strings.Contains(errs.String(), "the reasons are hidden, no_ink\n") {
 		t.Errorf("unknown: exit %d, %q", code, errs.String())
 	}
 }
