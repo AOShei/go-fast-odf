@@ -66,3 +66,9 @@ The timings are within noise on a shared machine. Bytes and allocations per op f
 
 - **Specification details to check** (no web access): `loext:opacity` is a LibreOffice extension, not ODF 1.3; I believe the `filter` value of `table:visibility` is in ODF 1.2 and later.
 - The `git worktree` route for the "before" run was refused by the sandbox: the corpus path needed an environment variable. So the parent commit was checked out on the clean tree instead, and the branch was then restored. The worktree was removed.
+
+## Follow-up decisions (2026-11-20)
+
+- **Command flags as `COMMAND_FLAGS.md`:** `gofastodf` gains `-stored`; the help text of `-furniture`, `-part-markers` and `-exclude-display` now follows the shared table; `-exclude-display=unknown` is an error (it already was; now tested). `TestRenderFlags` covers `-exclude-display` alone, `=hidden`, `=all`, `=no_ink`, `=unknown` and `-stored`. Commits `6442a40` (code, test), `f48b2e7` (help wording, README).
+- **Form controls declared not displayed get `hidden`:** the one single switch ODF 1.3 gives a placed control is `draw:display="none"` on its `draw:control` shape, or on the layer it stands on. The code already applied it (shapes go through the same path), so no code changed; the earlier report's statement that such a control was not reported was wrong. `TestControlDisplay` now shows a `draw:display="none"` control is `hidden`, a visible one has no reason, and `form:hidden`, unplaced and password controls are unchanged (stored part as `form_field`, or in place, with no reason). `form:printable` concerns printing only and is not read. Commit `026451a`; README `f48b2e7`.
+- **CHANGELOG started:** `CHANGELOG.md`, Keep a Changelog style, with an Unreleased section for the declared-not-judged change and the earlier phases in brief; `after_end` recorded as not applying. Commit `f48b2e7`.
