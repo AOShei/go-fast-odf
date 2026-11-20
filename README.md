@@ -95,6 +95,7 @@ One part of kind `slide` per `draw:page`. `Name` is the text of the title frame 
 
 - Frames, shapes and groups are put in reading order: the title first, then from top to bottom (`svg:y`) and, at one height, left to right (`svg:x`); an item with no position keeps the place of the one before it.
 - The title's paragraphs are `heading` level 1. Footer, date-time and page-number placeholders are `footer` blocks, header placeholders `header` blocks. Other text is paragraphs and list items as in a text document.
+- **Master-page text.** The shapes of a slide's master page (`draw:master-page-name` → `style:master-page` in styles.xml) that are not placeholders (no `presentation:class`, not `presentation:placeholder="true"`) are read once per master, not once per slide: on the first slide that uses the master and is not hidden (else the first), before its notes, in reading order. Their text is `header` if the shape starts in the upper half of the master's page layout (`fo:page-height`; 15.75 cm when none is given), `footer` if in the lower; pictures and tables keep their kinds. The master's placeholders (title, outline, header, footer, date-time, page-number) and its notes master are not content. Masters no slide uses are not read.
 - **Speaker notes** (`presentation:notes`) are one `note` block of type `speaker` at the end of the slide.
 
 ## Flat files
@@ -184,7 +185,7 @@ In every kind of document, `draw:object` and `draw:object-ole` in a frame are re
 
 ## Not read (yet)
 
-Drawings (`.odg`), charts, formulas and databases as documents in their own right; documents held whole inside a flat file's `draw:object`; change-tracked insertions are not marked in the text; master-page text of slides; the OpenOffice 1.x formats (`.sxw`).
+Drawings (`.odg`), charts, formulas and databases as documents in their own right; documents held whole inside a flat file's `draw:object`; change-tracked insertions are not marked in the text; whether a slide hides its master's objects (`presentation:background-objects-visible`); the OpenOffice 1.x formats (`.sxw`).
 
 ## Provenance
 

@@ -16,6 +16,9 @@ been released yet.
   region's `HeaderRows` when they are its first rows; a region exactly
   equal to a declared `table:database-range` with a header (the default)
   gets `HeaderRows: 1` and `Origin` `native` (was `inferred`).
+- odp master-page text: shapes of a used `style:master-page` that are not
+  placeholders are given once per master, on its first shown slide,
+  before the notes, as `header` (upper half) or `footer` (lower half).
 
 ### Changed: decryption limits (branch `review-2`)
 

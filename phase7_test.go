@@ -36,6 +36,51 @@ func TestFormulaNoValue(t *testing.T) {
 	}
 }
 
+// Text a master page shows of its own is given once per master, on the
+// first slide that uses it (the first shown one); its placeholders are
+// not content.
+func TestMasterPageText(t *testing.T) {
+	auto := `<style:page-layout style:name="PM1"><style:page-layout-properties fo:page-width="28cm" fo:page-height="20cm"/></style:page-layout>`
+	hidden := `<style:style style:name="dp-hidden" style:family="drawing-page"><style:drawing-page-properties presentation:visibility="hidden"/></style:style>`
+	frame := func(attrs, text string) string {
+		return `<draw:frame ` + attrs + `><draw:text-box><text:p>` + text + `</text:p></draw:text-box></draw:frame>`
+	}
+	master := `<style:master-page style:name="Default" style:page-layout-name="PM1">` +
+		frame(`presentation:class="title" svg:y="1cm"`, "Click to add Title") +
+		frame(`presentation:class="outline" svg:y="5cm"`, "Click to add Text") +
+		frame(`presentation:class="footer" svg:y="18cm"`, "Master footer") +
+		frame(`presentation:class="page-number" svg:y="18cm"`, "&lt;number&gt;") +
+		frame(`svg:x="20cm" svg:y="18cm"`, "ACME Ltd") +
+		frame(`svg:x="1cm" svg:y="0.5cm"`, "Confidential") +
+		`<presentation:notes><draw:frame presentation:class="notes"><draw:text-box><text:p>Notes master</text:p></draw:text-box></draw:frame></presentation:notes>` +
+		`</style:master-page>` +
+		`<style:master-page style:name="Unused" style:page-layout-name="PM1">` + frame(`svg:y="1cm"`, "Never shown") + `</style:master-page>`
+	page := func(attrs, text string) string {
+		return `<draw:page draw:master-page-name="Default" ` + attrs + `>` + frame(`svg:y="5cm"`, text) +
+			`<presentation:notes>` + frame(`presentation:class="notes"`, "notes "+text) + `</presentation:notes></draw:page>`
+	}
+	body := `<office:presentation>` + page(`draw:style-name="dp-hidden"`, "one") + page("", "two") + page("", "three") + `</office:presentation>`
+	data := bodyDoc(t, slideMIME, hidden, body, member{name: "styles.xml", data: stylesXML("", auto, master)})
+	doc := extract(t, data, nil)
+	if len(doc.Parts) != 3 {
+		t.Fatalf("%d parts", len(doc.Parts))
+	}
+	check(t, doc.Parts[0].Blocks, `
+paragraph{hidden} one
+note{hidden} notes one`)
+	check(t, doc.Parts[1].Blocks, `
+paragraph two
+header Confidential
+footer ACME Ltd
+note notes two`)
+	check(t, doc.Parts[2].Blocks, `
+paragraph three
+note notes three`)
+	if err := doc.Validate(); err != nil {
+		t.Error(err)
+	}
+}
+
 // Header rows come from what the file declares: table:table-header-rows
 // (print titles) and database ranges that contain a header.
 func TestSheetHeaderRows(t *testing.T) {
