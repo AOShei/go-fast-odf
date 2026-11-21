@@ -5,7 +5,7 @@ All notable changes to go-fast-odf are recorded here, in the style of
 
 ## v0.1.0 (not yet tagged)
 
-The first release. Built on go-fast-core schema 0.2, pinned at `d4cd8e2`.
+The first release. Built on go-fast-core schema 0.2, pinned at `4499357`.
 
 - Reads OpenDocument text documents (odt, ott, odm, otm, oth),
   spreadsheets (ods, ots) and presentations (odp, otp), and the flat XML
@@ -32,6 +32,15 @@ The first release. Built on go-fast-core schema 0.2, pinned at `d4cd8e2`.
 ## Before v0.1.0
 
 Development history, newest first. Nothing was released before v0.1.0.
+
+### Core 4499357: closed value sets, shared render flags
+
+- go-fast-core pinned at `4499357`: stored kinds, note types and roles
+  are closed sets that `Validate` checks; this library writes only core's
+  values and passes.
+- Command: the render flags are core's `AddRenderFlags`; their names,
+  values and errors are unchanged, and `-stored`'s help text gives core's
+  examples.
 
 ### Core d4cd8e2
 
