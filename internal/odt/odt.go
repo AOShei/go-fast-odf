@@ -1,7 +1,13 @@
-// Package odt reads the body of an OpenDocument text document
-// (office:text) into blocks: headings, paragraphs, lists, tables, frames
-// and text boxes in reading order, images, notes, comments, tracked
-// deletions, and the headers and footers of its master pages.
+// Package odt reads the body of an OpenDocument document into parts and
+// blocks: a text document (office:text) as one body part of headings,
+// paragraphs, lists, tables, frames and text boxes in reading order,
+// images, notes, comments, tracked deletions, and the headers and footers
+// of its master pages; a spreadsheet (office:spreadsheet) as one part per
+// sheet, its used regions as tables; a presentation (office:presentation)
+// as one part per slide, with the text of its master page and its speaker
+// notes. Embedded formulas and charts become blocks, form controls
+// paragraphs, and other embedded documents children. Values the document
+// keeps and never shows go to the stored part.
 //
 // The streams are read once, front to back, with the streaming scanner.
 // Every block is charged to the text budget as it is made, and a block

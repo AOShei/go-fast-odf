@@ -49,14 +49,19 @@ const (
 //	input.ambiguous           the archive names a member twice, in two
 //	                          ways, or has two members with one name
 //	text.tracked_changes      the document has tracked changes
+//	child.failed              an embedded file could not be taken out
+//	                          of the package to be handed on
 //	structure.heading_level_clamped
 //
 // What the file declares about display is on the blocks, spans, table
 // regions and parts (gofastcore.Display), not in warnings.
 const (
 	// WarnUnreadContent: the document holds content of a kind this
-	// version does not read (embedded objects, form controls); the
-	// message says what and how many.
+	// version does not read: plug-ins and floating frames, pictures held
+	// in a flat file in more than 64 MiB of base64, embedded objects that
+	// could not be read (a formula or chart whose content gives none, an
+	// object whose directory has no content.xml), documents held whole
+	// in a flat file. The message says what and how many.
 	WarnUnreadContent = odt.WarnUnreadContent
 	// WarnRegionSplit: an area of a sheet whose cells are spread so thinly
 	// that the rectangle around them is mostly empty was not written as
@@ -191,10 +196,10 @@ var mimeOf = map[string]string{
 //     damaged to read.
 //   - ErrUnsupported: a zip archive or XML document that is not
 //     OpenDocument; an OpenDocument file of a kind this version does not
-//     read (drawings, charts, formulas, databases); an encryption this
-//     version does not decrypt (an algorithm, key derivation or checksum
-//     other than AES-CBC, AES-GCM, Blowfish CFB, PBKDF2, Argon2id, SHA-1
-//     and SHA-256).
+//     read (drawings, charts, formulas, images, databases, OpenOffice.org
+//     1 text documents); an encryption this version does not decrypt
+//     (an algorithm, key derivation or checksum other than AES-CBC,
+//     AES-GCM, Blowfish CFB, PBKDF2, Argon2id, SHA-1 and SHA-256).
 //   - ErrPasswordRequired: the file is encrypted and Options.Password is
 //     empty.
 //   - ErrWrongPassword: the file is encrypted and its checksum or

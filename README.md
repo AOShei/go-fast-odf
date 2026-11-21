@@ -10,7 +10,7 @@ if err != nil { ... }
 fmt.Println(doc.Markdown())
 ```
 
-**Status: phase 2.** Text documents (`.odt`), spreadsheets (`.ods`), presentations (`.odp`), their templates, and the flat XML variants (`.fodt`, `.fods`, `.fodp`) are read. Password-protected packages are decrypted (AES-CBC with PBKDF2; ODF 1.4's AES-GCM with Argon2id; Blowfish of ODF 1.0 and 1.1). See `IMPLEMENTATION_PLAN.md`.
+**Status: v0.1.0 (not yet tagged).** Text documents (`.odt`, with the template `.ott`, master documents `.odm` and `.otm`, and web pages `.oth`), spreadsheets (`.ods`, `.ots`), presentations (`.odp`, `.otp`), and the flat XML variants (`.fodt`, `.fods`, `.fodp`) are read. Password-protected packages are decrypted (AES-CBC with PBKDF2; ODF 1.4's AES-GCM with Argon2id; Blowfish CFB of ODF 1.0 and 1.1). Drawings, charts, formulas, images and databases as documents in their own right, and `.sxw`, give `ErrUnsupported`.
 
 ## API
 
@@ -25,12 +25,14 @@ The format is decided from the file (a package's `mimetype` member or manifest r
 
 ```
 gofastodf [flags] file-or-directory...
-  -format json|markdown|text   -parts 2-5   -images meta|data|none
+  -format json|markdown|text   -parts 2-5   -images meta|data|none   -password P
   -spans  -cells  -furniture  -stored[=kinds]  -part-markers  -children  -exclude-display[=reasons]
-  -max-cells N  -max-decoded-bytes N  -max-text-bytes N  -o file  -quiet
+  -max-cells N  -max-decoded-bytes N  -max-text-bytes N  -o file  -quiet  -version
 ```
 
-Documents go to standard output; warnings of severity error go to standard error; the exit status is 1 if any input could not be read.
+A directory stands for the files in it and below it whose names end in `.odt`, `.ott`, `.odm`, `.ods`, `.ots`, `.odp`, `.otp`, `.fodt`, `.fods` or `.fodp` (in any case), LibreOffice's `.~lock.` files left out; other files in it are not read, `.otm` and `.oth` among them. A file named on the command line is read whatever its name. With one input the JSON is indented; with several, each document is one line.
+
+Documents go to standard output; warnings of severity error go to standard error; the exit status is 1 if any input could not be read, 2 for a usage error. `-password` is also tried on embedded documents. `-version` prints the module version the command was built from.
 
 The command reads embedded documents: an object whose media type is one of the OpenDocument formats this library reads (`application/vnd.oasis.opendocument.text`, `-spreadsheet`, `-presentation`, their templates, master and web variants and flat forms) is extracted with this library, as deep as core's `Limits.MaxDepth` (default 4) allows. Anything else (an OLE object, a drawing) is listed in `Children` with `child.unsupported` and not read.
 
@@ -128,13 +130,13 @@ Colour, size, position and overlap are not judged: text colour is not compared w
 
 ## Warnings
 
-Shared codes raised: `part.failed`, `part.no_text`, `text.tracked_changes`, `structure.heading_level_clamped`, `input.repaired`, `input.ambiguous`, `input.active_content` (Basic or other scripts in the package, event handlers, links that run macros, applets; none of it is read or run), `input.external_reference` (linked pictures, linked sections, plug-ins, an auto-reload address; nothing is fetched), `limit.exceeded`.
+Shared codes raised: `part.failed`, `part.no_text`, `text.tracked_changes`, `structure.heading_level_clamped`, `child.failed` (an embedded file could not be taken out of the package; it is listed in `Children` unread), `input.repaired`, `input.ambiguous`, `input.active_content` (Basic or other scripts in the package, event handlers, links that run macros, applets; none of it is read or run), `input.external_reference` (linked pictures, linked sections, plug-ins and floating frames, linked objects, an auto-reload address; nothing is fetched), `limit.exceeded`.
 
 Codes of this library:
 
 | Code | What happened |
 |---|---|
-| `odf.unread_content` | The document holds content this version does not read: an embedded formula or chart it could not read, a document held whole in a flat file, plug-ins, pictures over 64 MiB held in a flat file. The message counts them |
+| `odf.unread_content` | The document holds content this version does not read: an embedded formula or chart it could not read, an embedded object whose directory has no `content.xml`, a document held whole in a flat file, plug-ins and floating frames, pictures over 64 MiB held in a flat file. The message counts them |
 | `odf.region_split` | An area of a sheet with thinly spread cells was written as one table per run of cells in a row |
 | `odf.formula_no_value` | Cells of a sheet hold formulas with no stored result (no value attribute, no text), so they show nothing; one warning per sheet with the count (info). The formulas stay in `Table.Cells` |
 | `odf.part_damaged` | A supporting stream (manifest, styles, metadata) could not be read to its end; what was read is used |
@@ -143,7 +145,7 @@ Codes of this library:
 
 ## Errors
 
-`ErrMalformed` (not a zip archive, no `content.xml`, archive too damaged), `ErrUnsupported` (not OpenDocument; a kind not read yet; an encryption this version does not decrypt), `ErrPasswordRequired` (encrypted, no password), `ErrWrongPassword` (the checksum or authentication tag does not match the password given), `ErrLimitExceeded` (also: the manifest asks for more key-derivation work than the caps below), `ErrNoPartsSelected`.
+`ErrMalformed` (not a zip archive, no `content.xml`, archive too damaged), `ErrUnsupported` (not OpenDocument; a kind not read, as listed under "Not read"; an encryption this version does not decrypt), `ErrPasswordRequired` (encrypted, no password), `ErrWrongPassword` (the checksum or authentication tag does not match the password given), `ErrLimitExceeded` (also: the manifest asks for more key-derivation work than the caps below), `ErrNoPartsSelected`.
 
 ## Encryption
 
@@ -171,7 +173,7 @@ Every limit of `gofastcore.Options.Limits` applies. `MaxDecodedBytes` (default 2
 go test -run '^$' -fuzz '^FuzzContent$' -fuzztime=20s .
 ```
 
-Targets: `FuzzExtract` (whole files), `FuzzContent`, `FuzzSheet`, `FuzzSlides`, `FuzzStyles`, `FuzzMeta`, `FuzzManifest`, `FuzzFlat`. A target's input is the inside of a stream's root element (the target writes the root and its namespace declarations), and the packages it builds store their members uncompressed. Both matter: the fuzzing engine minimises each input that finds new coverage at a cost that grows with the square of its length, and with whole streams of 1–2 KB in compressed packages a worker spent nearly all its time minimising. `TestMutations` runs a seeded set of mutations of every target under plain `go test`.
+Targets: `FuzzExtract` (whole files), `FuzzContent`, `FuzzSheet`, `FuzzSlides`, `FuzzStyles`, `FuzzMeta`, `FuzzManifest`, `FuzzFlat`, and in `internal/odpkg` `FuzzEncryptionData` (a manifest's `manifest:encryption-data` and the encrypted member's bytes, with the key-derivation caps lowered so each input is cheap). The input of a stream target (all but `FuzzExtract` and `FuzzEncryptionData`) is the inside of a stream's root element (the target writes the root and its namespace declarations), and the packages it builds store their members uncompressed. Both matter: the fuzzing engine minimises each input that finds new coverage at a cost that grows with the square of its length, and with whole streams of 1–2 KB in compressed packages a worker spent nearly all its time minimising. `TestMutations` runs a seeded set of mutations of every target of the root package under plain `go test`.
 
 ## Embedded objects and form controls
 
@@ -183,9 +185,9 @@ In every kind of document, `draw:object` and `draw:object-ole` in a frame are re
 - **Other sub-documents** (a text document or spreadsheet embedded in another) are packed as a package of their own (members stored, `mimetype` first, the media type from the manifest or else from its body element) and handed to `Options.ExtractChild`; **OLE objects** (`draw:object-ole`, a member such as `Object 4`) are handed on as stored, with the manifest's media type. Each appears in `Document.Children`, extracted or listed. The decompression budget is settled with the shared budget before and after each. Linked objects (an address outside the package) are counted in `input.external_reference` and not fetched.
 - **Form controls** (`office:forms`, placed by `draw:control`) give a paragraph where they stand: label and value as `label: value` (a check box's value is `checked`), `Attrs["field"]` the control's name and `Attrs["control"]` its kind; a list box or combo box also gives a `choices` note of its options. Controls that no `draw:control` places go to the `stored` part with `stored=form_field`. Form values are data: the values of hidden controls, password fields and unplaced controls are extracted with no display reason. A placed control is `hidden` when its `draw:control` declares `draw:display="none"` or stands on a layer with `draw:display="none"`; that is the only switch ODF 1.3 gives a placed control (`form:printable` concerns printing only and is not read; the graphic style of a control has no display property).
 
-## Not read (yet)
+## Not read
 
-Drawings (`.odg`), charts, formulas and databases as documents in their own right; documents held whole inside a flat file's `draw:object`; change-tracked insertions are not marked in the text; the OpenOffice 1.x formats (`.sxw`).
+Drawings (`.odg`, `.otg`, `.fodg`), charts (`.odc`), formulas (`.odf`), images (`.odi`) and databases (`.odb`) as documents in their own right (`ErrUnsupported`); documents held whole inside a flat file's `draw:object` (`odf.unread_content`); change-tracked insertions are not marked in the text. Of the OpenOffice.org 1 formats, `.sxw` is refused (`ErrUnsupported`).
 
 ## Provenance
 
