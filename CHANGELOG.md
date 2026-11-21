@@ -24,9 +24,10 @@ All notable changes to go-fast-odf are recorded here, in the style of
   a list box's options and a drop-down field's values past 4,096;
   content validations past 16,384 (on the document); note citations,
   list and heading numbers and axis titles past 512 bytes; link
-  addresses past 8 KiB; list identifiers and list style names past
-  16,384. What a bound leaves out of a master page's own content is said
-  on each slide that shows it.
+  addresses past 8 KiB; lists that continue one whose identifier or
+  style name was not remembered (past 16,384 of each). What a bound
+  leaves out of a master page's own content is said on each slide that
+  shows it, merged with the slide's own warning for that bound.
 - A sheet's rows are counted up to the sheet's bound (2^24), not 2^20:
   a row repeated more than 2^20 times no longer moves the rows after it
   to wrong addresses.

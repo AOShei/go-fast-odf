@@ -17,6 +17,7 @@ import (
 func (r *reader) presentation(serr error) []gofastcore.Part {
 	var parts []gofastcore.Part
 	var uses []slideUse
+	r.heldHits = map[int][]capHit{}
 	if serr == nil && r.s.Depth() == 3 {
 		s := &r.s
 		depth := s.Depth()
@@ -54,6 +55,12 @@ func (r *reader) presentation(serr error) []gofastcore.Part {
 		parts = append(parts, gofastcore.Part{Kind: gofastcore.PartSlide, Number: 1})
 		r.finish(&parts[0], "presentation")
 	}
+	for i := range parts {
+		for _, h := range r.heldHits[parts[i].Number] {
+			parts[i].Warnings = append(parts[i].Warnings, h.warning())
+		}
+	}
+	r.heldHits = nil
 	last := &parts[len(parts)-1]
 	r.noteFailure(last, "content.xml", serr)
 	if r.limitMsg != "" {
@@ -272,9 +279,7 @@ func (r *reader) addMasters(parts []gofastcore.Part, uses []slideUse) {
 		p.Warnings = slices.DeleteFunc(p.Warnings, func(w gofastcore.Warning) bool { return w.Code == gofastcore.WarnPartNoText })
 		// What bounds left out of the master is left out of every slide
 		// that shows it.
-		for _, h := range lostIn[u.master] {
-			p.Warnings = append(p.Warnings, h.warning())
-		}
+		r.heldHits[p.Number] = mergeHits(r.heldHits[p.Number], lostIn[u.master])
 		said[u.master] = true
 		p.Finish()
 	}
@@ -292,7 +297,7 @@ func (r *reader) addMasters(parts []gofastcore.Part, uses []slideUse) {
 	names := slices.Sorted(maps.Keys(lostIn))
 	for _, name := range names {
 		if !said[name] {
-			r.hits = append(r.hits, lostIn[name]...)
+			r.hits = mergeHits(r.hits, lostIn[name])
 		}
 	}
 }

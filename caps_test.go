@@ -178,6 +178,27 @@ func TestSheetColumnsCap(t *testing.T) {
 		`<table:table-row table:number-rows-repeated="16777214"/><table:table-row table:number-rows-repeated="3">` +
 		`<table:table-cell><text:p/></table:table-cell></table:table-row>`
 	noLimits(t, extract(t, sheetDoc(t, `<table:table table:name="S">`+row+`</table:table>`), nil))
+
+	// A cell past the bound that only spans, and one whose long value is
+	// left out with it: the cell is counted, its value is not cut.
+	row = `<table:table-row><table:table-cell table:number-columns-repeated="65535"/>` +
+		`<table:table-cell table:number-columns-spanned="2" table:number-columns-repeated="3"/>` +
+		`<table:table-cell office:value-type="float" office:value="` + strings.Repeat("9", 70000) + `"/></table:table-row><table:table-row>` + cell("x") + `</table:table-row>`
+	doc = extract(t, sheetDoc(t, `<table:table table:name="S">`+row+`</table:table>`), nil)
+	saysOnce(t, doc, 0, "past column 65536", "(1 cells)")
+	if n := len(limitsOn(doc, 0)); n != 1 {
+		t.Errorf("%q", limitsOn(doc, 0))
+	}
+	// Cells past the bound are counted for the rows given, not those a
+	// limit stopped before.
+	row = `<table:table-row table:number-rows-repeated="10"><table:table-cell table:number-columns-repeated="65535"/>` +
+		cell("in") + cell("out") + `</table:table-row>`
+	data := sheetDoc(t, `<table:table table:name="S">`+row+`</table:table>`)
+	doc, err := (&Extractor{MaxCells: 3}).Extract(t.Context(), bytes.NewReader(data), int64(len(data)), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	saysOnce(t, doc, 0, "past column 65536", "(3 cells)")
 }
 
 // A cell's stored value, given as its text, and its formula are content:
@@ -289,23 +310,43 @@ func TestListIDsCap(t *testing.T) {
 	if testing.Short() {
 		t.Skip("builds documents of several MB")
 	}
+	const what = "lists continue one whose identifier or style name was not remembered"
+	// LibreOffice gives every list an xml:id: lists past the bound that
+	// nothing continues lose nothing.
 	var sb strings.Builder
+	for i := range 17000 {
+		fmt.Fprintf(&sb, `<text:list xml:id="list%d" text:style-name="L"><text:list-item><text:p>p</text:p></text:list-item></text:list>`, i)
+	}
+	lists := sb.String()
+	noLimits(t, extract(t, textDoc(t, "", lists), nil))
+	// One that continues a list whose identifier was not kept; one that
+	// names a list there never was is not counted.
+	doc := extract(t, textDoc(t, "", lists+
+		`<text:list text:continue-list="list16999" text:style-name="L"><text:list-item><text:p>q</text:p></text:list-item></text:list>`+
+		`<text:list text:continue-list="nowhere" text:style-name="L"><text:list-item><text:p>r</text:p></text:list-item></text:list>`), nil)
+	saysOnce(t, doc, 0, what, "(1 lists)")
+
+	// Numbered paragraphs: a list identifier met again after it was not
+	// kept.
+	sb.Reset()
 	for i := range 16384 + 1 {
 		fmt.Fprintf(&sb, `<text:numbered-paragraph text:list-id="L%d"><text:p>p</text:p></text:numbered-paragraph>`, i)
 	}
-	doc := extract(t, textDoc(t, "", sb.String()), nil)
-	saysOnce(t, doc, 0, "list identifiers or list style names", "(1 lists)")
+	noLimits(t, extract(t, textDoc(t, "", sb.String()), nil))
+	sb.WriteString(`<text:numbered-paragraph text:list-id="L16384"><text:p>again</text:p></text:numbered-paragraph>`)
+	saysOnce(t, extract(t, textDoc(t, "", sb.String()), nil), 0, what, "(1 lists)")
 
-	// Style names: one already remembered is updated when the map is
-	// full, and is not counted; a new one is.
+	// Style names: one remembered is updated when the map is full; a
+	// list that continues the numbering of a style not kept is counted.
 	sb.Reset()
 	for i := range 16384 {
 		fmt.Fprintf(&sb, `<text:list text:style-name="S%d"><text:list-item><text:p>p</text:p></text:list-item></text:list>`, i)
 	}
-	sb.WriteString(`<text:list text:style-name="S0"><text:list-item><text:p>again</text:p></text:list-item></text:list>`)
-	noLimits(t, extract(t, textDoc(t, "", sb.String()), nil))
+	sb.WriteString(`<text:list text:style-name="S0" text:continue-numbering="true"><text:list-item><text:p>again</text:p></text:list-item></text:list>`)
 	sb.WriteString(`<text:list text:style-name="Snew"><text:list-item><text:p>new</text:p></text:list-item></text:list>`)
-	saysOnce(t, extract(t, textDoc(t, "", sb.String()), nil), 0, "list style names", "(1 lists)")
+	noLimits(t, extract(t, textDoc(t, "", sb.String()), nil))
+	sb.WriteString(`<text:list text:style-name="Snew" text:continue-numbering="true"><text:list-item><text:p>on</text:p></text:list-item></text:list>`)
+	saysOnce(t, extract(t, textDoc(t, "", sb.String()), nil), 0, what, "(1 lists)")
 }
 
 func TestFormCaps(t *testing.T) {
@@ -430,12 +471,17 @@ func TestCapWarningsOnTheirPart(t *testing.T) {
 	slide := func(m, text string) string {
 		return `<draw:page draw:master-page-name="` + m + `"><draw:frame><draw:text-box>` + text + `</draw:text-box></draw:frame></draw:page>`
 	}
-	body := `<office:presentation>` + slide("M", `<text:p>one</text:p>`) +
-		slide("P", `<text:list><text:list-item><text:number>`+long+`</text:number><text:p>two</text:p></text:list-item></text:list>`) +
-		slide("M", `<text:p>three</text:p>`) + `</office:presentation>`
+	cutLabel := `<text:list><text:list-item><text:number>` + long + `</text:number><text:p>two</text:p></text:list-item></text:list>`
+	body := `<office:presentation>` + slide("M", `<text:p>one</text:p>`) + slide("P", cutLabel) +
+		slide("M", `<text:p>three</text:p>`) + slide("M", cutLabel) + `</office:presentation>`
 	doc = extract(t, bodyDoc(t, slideMIME, "", body, member{name: "styles.xml", data: stylesXML("", "", master)}), nil)
 	for i := range 3 {
 		saysOnce(t, doc, i, "labels longer than 512 bytes", "(1 labels)")
+	}
+	// A slide's own cut and its master's: one warning for the bound.
+	saysOnce(t, doc, 3, "labels longer than 512 bytes", "(2 labels)")
+	if n := len(limitsOn(doc, 3)); n != 1 {
+		t.Errorf("slide 4: %q", limitsOn(doc, 3))
 	}
 	if len(limitsOn(doc, -1)) != 0 {
 		t.Errorf("document %q", limitsOn(doc, -1))

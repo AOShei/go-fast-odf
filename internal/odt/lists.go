@@ -1,6 +1,7 @@
 package odt
 
 import (
+	"hash/fnv"
 	"strconv"
 	"strings"
 
@@ -43,29 +44,64 @@ func (c *counters) restart(level, start int) {
 // listState carries numbering from one list to the next that continues
 // it.
 type listState struct {
-	byID    map[string]*counters
-	byStyle map[string]*counters
+	byID    listMap
+	byStyle listMap
 	last    *counters
 }
 
 func (l *listState) init() {
-	l.byID = map[string]*counters{}
-	l.byStyle = map[string]*counters{}
+	l.byID.init()
+	l.byStyle.init()
 }
 
 // maxListIDs bounds the list identifiers, and the list style names,
 // remembered.
 const maxListIDs = 1 << 14
 
-// remember records the counters a list identifier or style name stands
-// for, in a map bounded by maxListIDs: a name already there is updated.
-// It reports false if the map is full and the name was not kept.
-func remember(m map[string]*counters, key string, c *counters) bool {
-	if _, ok := m[key]; !ok && len(m) >= maxListIDs {
-		return false
+// listMap holds the counters list identifiers or style names stand for,
+// at most maxListIDs of them. Of the names not kept because it was full
+// it keeps a hash (as many again), so that a list that continues one is
+// known to have lost its numbering, and one that names a list there never
+// was is not taken for one.
+type listMap struct {
+	m         map[string]*counters
+	forgotten map[uint64]bool
+}
+
+func (l *listMap) init() {
+	l.m = map[string]*counters{}
+	l.forgotten = map[uint64]bool{}
+}
+
+// get returns the counters key stands for, or nil; missed reports that
+// key was not kept because the map was full (or, past what is kept of
+// the names not kept, may not have been).
+func (l *listMap) get(key string) (c *counters, missed bool) {
+	if c := l.m[key]; c != nil {
+		return c, false
 	}
-	m[key] = c
-	return true
+	if len(l.m) < maxListIDs {
+		return nil, false
+	}
+	return nil, l.forgotten[hashKey(key)] || len(l.forgotten) >= maxListIDs
+}
+
+// set records the counters key stands for. A key already there is
+// updated; a new one past the bound is not kept, and its hash is.
+func (l *listMap) set(key string, c *counters) {
+	if _, ok := l.m[key]; ok || len(l.m) < maxListIDs {
+		l.m[key] = c
+		return
+	}
+	if len(l.forgotten) < maxListIDs {
+		l.forgotten[hashKey(key)] = true
+	}
+}
+
+func hashKey(s string) uint64 {
+	h := fnv.New64a()
+	h.Write([]byte(s))
+	return h.Sum64()
 }
 
 // listCtx is a text:list being read.
@@ -208,25 +244,34 @@ func (r *reader) list(c ctxt, dst *[]gofastcore.Block) {
 		l.name = name
 		l.style = r.set.List(r.sc, name)
 		cont := r.attr(ns.Text, "continue-list")
+		var byID *counters
+		missed := false
+		if cont != "" {
+			byID, missed = r.lists.byID.get(cont)
+		}
 		switch {
-		case cont != "" && r.lists.byID[cont] != nil:
-			l.count = r.lists.byID[cont]
+		case byID != nil:
+			l.count = byID
 		case r.attr(ns.Text, "continue-numbering") == "true":
-			l.count = r.lists.byStyle[name]
+			var lost bool
+			l.count, lost = r.lists.byStyle.get(name)
+			missed = missed || lost
 			if l.count == nil {
 				l.count = r.lists.last
 			}
 		}
+		if missed {
+			// The list it continues was not remembered: its numbering
+			// starts again (or goes on from the list before).
+			r.lost(capListIDs, 1)
+		}
 		if l.count == nil {
 			l.count = &counters{}
 		}
-		kept := true
 		if id := r.attr(xmlscan.SpaceXML, "id"); id != "" {
-			kept = remember(r.lists.byID, id, l.count)
+			r.lists.byID.set(id, l.count)
 		}
-		if !remember(r.lists.byStyle, name, l.count) || !kept {
-			r.lost(capListIDs, 1)
-		}
+		r.lists.byStyle.set(name, l.count)
 		r.lists.last = l.count
 	}
 	depth := s.Depth()
@@ -311,11 +356,17 @@ func (r *reader) numberedParagraph(c ctxt, dst *[]gofastcore.Block) {
 		level = min(n, 10)
 	}
 	id := r.attr(ns.Text, "list-id")
-	count := r.lists.byID[id]
+	var count *counters
+	if id != "" {
+		var missed bool
+		if count, missed = r.lists.byID.get(id); missed {
+			r.lost(capListIDs, 1)
+		}
+	}
 	if count == nil {
 		count = &counters{}
-		if id != "" && !remember(r.lists.byID, id, count) {
-			r.lost(capListIDs, 1)
+		if id != "" {
+			r.lists.byID.set(id, count)
 		}
 	}
 	l := &listCtx{style: r.set.List(r.sc, name), name: name, depth: level, count: count}

@@ -63,7 +63,7 @@ var caps = [...]capInfo{
 	capValidations: {what: "content validations past the first " + strconv.Itoa(maxValidations) + " were not read; the cells that use them have no choices note", unit: "validations", doc: true},
 	capLabel:       {what: "labels longer than 512 bytes (note citations, list and heading numbers, axis titles) were cut there", unit: "labels"},
 	capAddress:     {what: "link addresses longer than 8192 bytes were cut there", unit: "addresses"},
-	capListIDs:     {what: "lists past the first " + strconv.Itoa(maxListIDs) + " list identifiers or list style names were not remembered; a list that continues one of them starts its numbering again", unit: "lists"},
+	capListIDs:     {what: "lists continue one whose identifier or style name was not remembered (past the first " + strconv.Itoa(maxListIDs) + "); their numbering starts again", unit: "lists"},
 	capPictures:    {what: "the limit on decompressed bytes was reached; pictures were not read", unit: "pictures"},
 }
 
@@ -91,6 +91,40 @@ func (r *reader) lost(id capID, n int64) {
 		}
 	}
 	r.hits = append(r.hits, capHit{id: id, n: n})
+}
+
+// takeHits takes what the bounds left out of the part just read from
+// r.hits, leaving what belongs to the document.
+func (r *reader) takeHits() []capHit {
+	var own []capHit
+	kept := r.hits[:0]
+	for _, h := range r.hits {
+		if caps[h.id].doc {
+			kept = append(kept, h)
+		} else {
+			own = append(own, h)
+		}
+	}
+	r.hits = kept
+	return own
+}
+
+// mergeHits adds the counts of b to a, bound by bound, in the order met.
+func mergeHits(a, b []capHit) []capHit {
+	for _, h := range b {
+		found := false
+		for i := range a {
+			if a[i].id == h.id {
+				a[i].n = satAdd(a[i].n, h.n)
+				found = true
+				break
+			}
+		}
+		if !found {
+			a = append(a, h)
+		}
+	}
+	return a
 }
 
 // sayLost gives what the bounds left out of the part just read as its

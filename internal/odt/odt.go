@@ -95,6 +95,10 @@ type reader struct {
 	cells    int64
 
 	hits []capHit // what fixed bounds left out of the part being read
+	// heldHits, while a presentation is read, keeps what bounds left out of
+	// each slide (by number) until its master's content is added, so
+	// that both are said in one warning per bound.
+	heldHits map[int][]capHit
 
 	deletions map[string]*deletion
 	usedDel   map[string]bool
@@ -261,8 +265,16 @@ func (r *reader) finish(part *gofastcore.Part, what string) {
 		part.Warn(gofastcore.SeverityInfo, gofastcore.WarnHeadingLevelClamped, fmt.Sprintf("%d headings deeper than level 6", r.clamped))
 		r.clamped = 0
 	}
-	r.sayLost(part, nil)
-	if len(part.Blocks) == 0 && len(part.Warnings) == 0 {
+	held := false
+	if r.heldHits != nil {
+		if own := r.takeHits(); len(own) > 0 {
+			r.heldHits[part.Number] = own
+			held = true
+		}
+	} else {
+		r.sayLost(part, nil)
+	}
+	if len(part.Blocks) == 0 && len(part.Warnings) == 0 && !held {
 		part.Warn(gofastcore.SeverityWarning, gofastcore.WarnPartNoText, "the "+what+" has no text and no images")
 	}
 	part.Finish()
