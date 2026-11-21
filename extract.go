@@ -405,7 +405,7 @@ func (e *Extractor) Extract(ctx context.Context, r io.ReaderAt, size int64, opts
 			w.Message += "; and an instruction to reload the document from an address"
 			external = 0
 		}
-		doc.Warnings = append(doc.Warnings, w)
+		warn(w.Severity, w.Code, w.Message)
 	}
 	if external > 0 {
 		warn(gofastcore.SeverityInfo, gofastcore.WarnInputExternalReference, "the document's metadata tells a reader to reload it from an address; nothing was fetched")

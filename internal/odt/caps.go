@@ -145,8 +145,10 @@ func (r *reader) sayLost(part *gofastcore.Part, warn *[]gofastcore.Warning) {
 		}
 		w := h.warning()
 		if part != nil {
-			part.Warnings = append(part.Warnings, w)
+			part.Warn(w.Severity, w.Code, w.Message)
 		} else {
+			// The document's warnings are gathered in Result.Warnings,
+			// which the caller gives to Document.Warn.
 			*warn = append(*warn, w)
 		}
 	}

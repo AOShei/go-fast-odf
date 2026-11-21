@@ -57,7 +57,8 @@ func (r *reader) presentation(serr error) []gofastcore.Part {
 	}
 	for i := range parts {
 		for _, h := range r.heldHits[parts[i].Number] {
-			parts[i].Warnings = append(parts[i].Warnings, h.warning())
+			w := h.warning()
+			parts[i].Warn(w.Severity, w.Code, w.Message)
 		}
 	}
 	r.heldHits = nil
