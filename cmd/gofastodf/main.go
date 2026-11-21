@@ -4,11 +4,12 @@
 //
 //	gofastodf [flags] file-or-directory...
 //
-// A directory stands for the OpenDocument files in it and below it. With
-// one input the JSON is indented; with several, each document is one
-// line. Only the documents go to standard output: everything said about
-// them goes to standard error, and the exit status is 1 if any input
-// could not be read.
+// A directory stands for the files in it and below it whose extensions
+// are in the extensions table below (not .otm or .oth). With one input
+// the JSON is indented; with several, each document is one line. Only
+// the documents go to standard output: everything said about them goes
+// to standard error, and the exit status is 1 if any input could not be
+// read.
 //
 // Its shape follows go-fast-ooxml's command gofastooxml (same author, MIT
 // License).
