@@ -8,9 +8,11 @@ All notable changes to go-fast-odf are recorded here, in the style of
 - The OpenOffice.org 1 formats other than sxw (sxc, sxi, sxd, sxm, sxg
   and the templates stw, stc, sti, std) give `ErrUnsupported`; they were
   reported as an empty odt. A package whose media type is not
-  OpenDocument's (or is missing) and whose `content.xml` has no
-  OpenDocument body gives `ErrUnsupported`; it was reported as an empty
-  odt.
+  OpenDocument's (or is missing) and whose `content.xml` is read and has
+  no OpenDocument body gives `ErrUnsupported`; it was reported as an
+  empty odt. One whose `content.xml` cannot be read as far as a body
+  (damaged, cut short, not XML) is still read as a damaged text
+  document, with its warning.
 - Fixed bounds that left content out without saying so now raise
   `limit.exceeded` (severity error), once per bound on the part
   concerned, with how much was left out: table cells past column 16,384
@@ -22,7 +24,9 @@ All notable changes to go-fast-odf are recorded here, in the style of
   a list box's options and a drop-down field's values past 4,096;
   content validations past 16,384 (on the document); note citations,
   list and heading numbers and axis titles past 512 bytes; link
-  addresses past 8 KiB; list identifiers past 16,384.
+  addresses past 8 KiB; list identifiers and list style names past
+  16,384. What a bound leaves out of a master page's own content is said
+  on each slide that shows it.
 - A sheet's rows are counted up to the sheet's bound (2^24), not 2^20:
   a row repeated more than 2^20 times no longer moves the rows after it
   to wrong addresses.
@@ -37,11 +41,11 @@ All notable changes to go-fast-odf are recorded here, in the style of
   `MaxDecodedBytes` cannot hold raises `limit.exceeded`; the picture's
   block was given empty without a warning.
 - More styles than are read (65,536) and more manifest entries than are
-  read (131,072) are `limit.exceeded` on the document; they were
-  `odf.part_damaged`.
-- Master-page text left out of slides past the bound on repeated blocks
-  is said once, on the first slide concerned, with the number of slides;
-  it was one warning per slide.
+  read (131,072) are `limit.exceeded`, severity error, on the document;
+  they were `odf.part_damaged`, severity warning.
+- Of the slides left without their master page's text past the bound on
+  repeated blocks, each still says so; the first now gives the number of
+  slides.
 - Argon2id key derivation looks at the context every 1,024 blocks, not
   once per segment, so that cancellation is prompt.
 

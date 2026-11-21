@@ -51,6 +51,10 @@ type Result struct {
 	// "presentation", or another this package does not read (Parts is
 	// then empty), or "" if the stream has no body.
 	Kind string
+	// Failed: content.xml could not be read as far as its body (it is
+	// damaged, cut short or not XML), so what kind of document it holds
+	// is not known.
+	Failed bool
 	// Parts are the body of a text document, the sheets of a spreadsheet,
 	// the slides of a presentation. Stored is the stored part, or nil.
 	Parts  []gofastcore.Part
@@ -158,6 +162,7 @@ func Read(ctx context.Context, pkg *odpkg.Package, set *style.Set, opts *gofastc
 			}
 		}
 	}
+	res.Failed = res.Kind == "" && (serr != nil || r.s.Err() != nil)
 	switch res.Kind {
 	case "spreadsheet":
 		res.Parts = r.spreadsheet(serr)

@@ -397,7 +397,7 @@ func (r *reader) chart(sub *xmlscan.Scanner, c ctxt, name string, dst *[]gofastc
 			inHeader = true
 		case sub.Space() == ns.Table && string(sub.Local()) == "table-row":
 			n := asked(attrOf(sub, ns.Table, "number-rows-repeated"))
-			row, lostCols := r.chartRow(sub)
+			row, lostCols, cut := chartRow(sub)
 			kept := min(n, int64(maxChartRows-len(rows)))
 			for range kept {
 				rows = append(rows, row)
@@ -409,6 +409,7 @@ func (r *reader) chart(sub *xmlscan.Scanner, c ctxt, name string, dst *[]gofastc
 				r.lost(capChartRows, n-kept)
 			}
 			r.lost(capChartCols, satMul(lostCols, kept))
+			r.lost(capChartCell, satMul(cut, kept))
 		}
 	}
 	if title != "" {
@@ -460,26 +461,27 @@ func (r *reader) chart(sub *xmlscan.Scanner, c ctxt, name string, dst *[]gofastc
 }
 
 // chartRow reads the cells of a row of a chart's table, and counts the
-// cells with text past the last column kept.
-func (r *reader) chartRow(sub *xmlscan.Scanner) (row []string, lost int64) {
+// cells with text past the last column kept and the cells kept that were
+// cut.
+func chartRow(sub *xmlscan.Scanner) (row []string, lost, cut int64) {
 	depth := sub.Depth()
 	for {
 		k := sub.Next()
 		if k == xmlscan.EOF || k == xmlscan.End && sub.Depth() < depth {
-			return row, lost
+			return row, lost, cut
 		}
 		if k != xmlscan.Start || sub.Space() != ns.Table || (string(sub.Local()) != "table-cell" && string(sub.Local()) != "covered-table-cell") {
 			continue
 		}
 		n := asked(attrOf(sub, ns.Table, "number-columns-repeated"))
 		v, _ := clean.String(sub.AppendText(nil), clean.Prose)
+		kept := min(n, int64(maxChartCols-len(row)))
 		if len(v) > maxFormula {
 			// Cut where the bound is; a character split there becomes
 			// U+FFFD.
 			v, _ = clean.String([]byte(v[:maxFormula]), clean.Prose)
-			r.lost(capChartCell, 1)
+			cut = satAdd(cut, kept)
 		}
-		kept := min(n, int64(maxChartCols-len(row)))
 		for range kept {
 			row = append(row, v)
 		}
@@ -535,7 +537,9 @@ func (r *reader) readForms() {
 			continue
 		case "option", "item":
 			if cur != nil && len(cur.options) >= maxOptions {
-				if r.attr(ns.Form, "label") != "" || r.attr(ns.Form, "value") != "" {
+				label, _ := s.Attr(ns.Form, "label")
+				value, _ := s.Attr(ns.Form, "value")
+				if len(label) > 0 || len(value) > 0 {
 					r.lost(capOptions, 1)
 				}
 			} else if cur != nil {

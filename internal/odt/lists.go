@@ -53,8 +53,20 @@ func (l *listState) init() {
 	l.byStyle = map[string]*counters{}
 }
 
-// maxListIDs bounds the list identifiers remembered.
+// maxListIDs bounds the list identifiers, and the list style names,
+// remembered.
 const maxListIDs = 1 << 14
+
+// remember records the counters a list identifier or style name stands
+// for, in a map bounded by maxListIDs: a name already there is updated.
+// It reports false if the map is full and the name was not kept.
+func remember(m map[string]*counters, key string, c *counters) bool {
+	if _, ok := m[key]; !ok && len(m) >= maxListIDs {
+		return false
+	}
+	m[key] = c
+	return true
+}
 
 // listCtx is a text:list being read.
 type listCtx struct {
@@ -208,14 +220,11 @@ func (r *reader) list(c ctxt, dst *[]gofastcore.Block) {
 		if l.count == nil {
 			l.count = &counters{}
 		}
-		if id := r.attr(xmlscan.SpaceXML, "id"); id != "" && len(r.lists.byID) < maxListIDs {
-			r.lists.byID[id] = l.count
-		} else if id != "" {
-			r.lost(capListIDs, 1)
+		kept := true
+		if id := r.attr(xmlscan.SpaceXML, "id"); id != "" {
+			kept = remember(r.lists.byID, id, l.count)
 		}
-		if len(r.lists.byStyle) < maxListIDs {
-			r.lists.byStyle[name] = l.count
-		} else {
+		if !remember(r.lists.byStyle, name, l.count) || !kept {
 			r.lost(capListIDs, 1)
 		}
 		r.lists.last = l.count
@@ -305,9 +314,7 @@ func (r *reader) numberedParagraph(c ctxt, dst *[]gofastcore.Block) {
 	count := r.lists.byID[id]
 	if count == nil {
 		count = &counters{}
-		if id != "" && len(r.lists.byID) < maxListIDs {
-			r.lists.byID[id] = count
-		} else if id != "" {
+		if id != "" && !remember(r.lists.byID, id, count) {
 			r.lost(capListIDs, 1)
 		}
 	}

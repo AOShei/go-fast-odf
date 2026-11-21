@@ -355,9 +355,12 @@ func (e *Extractor) Extract(ctx context.Context, r io.ReaderAt, size int64, opts
 	}
 	byBody := map[string]string{"text": "odt", "": "odt", "spreadsheet": "ods", "presentation": "odp"}
 	if !known {
-		if res.Kind == "" {
+		if res.Kind == "" && !res.Failed {
 			// Neither the media type nor the content says what the file
-			// is: its content.xml has no OpenDocument body.
+			// is: its content.xml was read and has no OpenDocument body.
+			// One that could not be read so far is a damaged document,
+			// read for what it has (metadata, headers and footers) with a
+			// warning, as before.
 			return nil, fmt.Errorf("gofastodf: the package's content has no OpenDocument body: %w", gofastcore.ErrUnsupported)
 		}
 		f, ok := byBody[res.Kind]

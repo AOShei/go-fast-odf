@@ -10,7 +10,6 @@ import (
 	"github.com/AOShei/go-fast-core"
 	"github.com/AOShei/go-fast-odf/internal/clean"
 	"github.com/AOShei/go-fast-odf/internal/ns"
-	"github.com/AOShei/go-fast-odf/internal/style"
 	"github.com/AOShei/go-fast-odf/internal/xmlscan"
 )
 
@@ -484,13 +483,11 @@ func (r *reader) sheetRow(sh *sheetIn, row *int) {
 	rowStyle := r.attr(ns.Table, "default-cell-style-name")
 	top := *row
 	*row = min(top+n, maxSheetRows)
-	if top >= maxSheetRows {
-		if r.skipRow() {
-			r.lost(capSheetRows, want)
-		}
-		return
-	}
-	if hidden != 0 {
+	// A row past the last row read is read as any other, to count it if
+	// a cell of it holds something, and then left out.
+	pastRow := top >= maxSheetRows
+	rowHolds := false
+	if hidden != 0 && !pastRow {
 		sh.rows = append(sh.rows, span{from: top, to: *row - 1, hidden: hidden})
 	}
 	var cells []sheetCell
@@ -513,14 +510,11 @@ func (r *reader) sheetRow(sh *sheetIn, row *int) {
 		}
 		covered := string(s.Local()) == "covered-table-cell"
 		wantCols := asked(r.attr(ns.Table, "number-columns-repeated"))
-		if col >= maxSheetCols {
-			// Past the last column read: the rest of the row is passed
-			// over, and what it held counted.
-			if !covered && r.skipCell() {
-				lostCols = satAdd(lostCols, wantCols)
-			} else if covered {
-				s.Skip()
-			}
+		// Past the last column read, a cell is read as any other, to
+		// count it if it holds something, and then left out.
+		past := pastRow || col >= maxSheetCols
+		if past && covered {
+			s.Skip()
 			continue
 		}
 		reps := int(min(wantCols, maxRepeat))
@@ -529,7 +523,7 @@ func (r *reader) sheetRow(sh *sheetIn, row *int) {
 			c.rows = int32(min(repeat(r.attr(ns.Table, "number-rows-spanned")), maxSheetRows))
 			c.cols = int32(min(repeat(r.attr(ns.Table, "number-columns-spanned")), maxSheetCols))
 		}
-		if vname := r.attr(ns.Table, "content-validation-name"); vname != "" {
+		if vname := r.attr(ns.Table, "content-validation-name"); vname != "" && !past {
 			if _, ok := r.validations[vname]; ok {
 				sh.choose(vname, top, col, *row-1, min(col+reps, maxSheetCols)-1)
 			}
@@ -566,7 +560,7 @@ func (r *reader) sheetRow(sh *sheetIn, row *int) {
 			hid |= reasons(&run{eff: cs})
 		}
 		c.text, c.hidden = text, hid
-		if formula != "" && text == "" && value == "" {
+		if formula != "" && text == "" && value == "" && !past {
 			noValue += int64(min(reps, maxSheetCols-col))
 		}
 		var more cellMore
@@ -591,10 +585,20 @@ func (r *reader) sheetRow(sh *sheetIn, row *int) {
 		if more != (cellMore{}) {
 			c.more = &more
 		}
+		if past {
+			switch {
+			case !holds(&c, rest):
+			case pastRow:
+				rowHolds = true
+			default:
+				lostCols = satAdd(lostCols, wantCols)
+			}
+			continue
+		}
 		for _, b := range rest {
 			notes = append(notes, placed{row: top, col: col, block: b})
 		}
-		has := c.text != "" || c.rows > 1 || c.cols > 1 || c.more != nil
+		has := holds(&c, nil) || c.rows > 1 || c.cols > 1
 		if covered || !has {
 			col = min(col+reps, maxSheetCols)
 		} else {
@@ -605,6 +609,12 @@ func (r *reader) sheetRow(sh *sheetIn, row *int) {
 				col++
 			}
 		}
+	}
+	if pastRow {
+		if rowHolds {
+			r.lost(capSheetRows, want)
+		}
+		return
 	}
 	if len(cells) > 0 {
 		r.lost(capSheetRows, want-int64(*row-top))
@@ -670,35 +680,11 @@ func cellValue(r *reader, vt string) string {
 	return out
 }
 
-// skipRow passes over a row, whose Start is current, past the last row
-// read, and reports whether any of its cells held anything.
-func (r *reader) skipRow() bool {
-	s := &r.s
-	has := false
-	depth := s.Depth()
-	for {
-		k := s.Next()
-		if k == xmlscan.EOF || k == xmlscan.End && s.Depth() < depth {
-			return has
-		}
-		if k != xmlscan.Start {
-			continue
-		}
-		if s.Space() == ns.Table && string(s.Local()) == "table-cell" {
-			has = r.skipCell() || has
-			continue
-		}
-		s.Skip()
-	}
-}
-
-// skipCell passes over a cell, whose Start is current, past the last
-// column or row read, and reports whether it held anything: a value, a
-// formula or content.
-func (r *reader) skipCell() bool {
-	_, typed := r.s.Attr(ns.Office, "value-type")
-	_, formula := r.s.Attr(ns.Table, "formula")
-	return style.HasChildren(&r.s) || typed || formula
+// holds reports whether a cell, read, holds something to give: text,
+// details (a formula, a value, a link) or notes that stand in it. Cells
+// in the sheet and cells past its bounds are judged by it alike.
+func holds(c *sheetCell, rest []gofastcore.Block) bool {
+	return c.text != "" || c.more != nil || len(rest) > 0
 }
 
 func cellType(vt string) gofastcore.CellType {

@@ -63,13 +63,19 @@ var caps = [...]capInfo{
 	capValidations: {what: "content validations past the first " + strconv.Itoa(maxValidations) + " were not read; the cells that use them have no choices note", unit: "validations", doc: true},
 	capLabel:       {what: "labels longer than 512 bytes (note citations, list and heading numbers, axis titles) were cut there", unit: "labels"},
 	capAddress:     {what: "link addresses longer than 8192 bytes were cut there", unit: "addresses"},
-	capListIDs:     {what: "list identifiers past the first " + strconv.Itoa(maxListIDs) + " were not kept; a list that continues one starts its numbering again", unit: "identifiers"},
+	capListIDs:     {what: "lists past the first " + strconv.Itoa(maxListIDs) + " list identifiers or list style names were not remembered; a list that continues one of them starts its numbering again", unit: "lists"},
 	capPictures:    {what: "the limit on decompressed bytes was reached; pictures were not read", unit: "pictures"},
 }
 
 type capHit struct {
 	id capID
 	n  int64
+}
+
+func (h capHit) warning() gofastcore.Warning {
+	c := caps[h.id]
+	return gofastcore.Warning{Code: gofastcore.WarnLimitExceeded, Severity: gofastcore.SeverityError,
+		Message: fmt.Sprintf("%s (%d %s)", c.what, h.n, c.unit)}
 }
 
 // lost records that a bound left n items out. The bounds are kept in the
@@ -98,8 +104,7 @@ func (r *reader) sayLost(part *gofastcore.Part, warn *[]gofastcore.Warning) {
 			kept = append(kept, h)
 			continue
 		}
-		w := gofastcore.Warning{Code: gofastcore.WarnLimitExceeded, Severity: gofastcore.SeverityError,
-			Message: fmt.Sprintf("%s (%d %s)", c.what, h.n, c.unit)}
+		w := h.warning()
 		if part != nil {
 			part.Warnings = append(part.Warnings, w)
 		} else {

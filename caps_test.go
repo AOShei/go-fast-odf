@@ -89,7 +89,6 @@ func TestNotReadIsRefused(t *testing.T) {
 	for name, data := range map[string][]byte{
 		"unknown type, old content": pkg(t, "application/x-other", member{name: "content.xml", data: ooo}),
 		"no type, old content":      pkg(t, "", member{name: "content.xml", data: ooo}),
-		"no type, not XML":          pkg(t, "", member{name: "content.xml", data: "not xml at all"}),
 		"no type, other XML":        pkg(t, "", member{name: "content.xml", data: `<?xml version="1.0"?><html><body><p>x</p></body></html>`}),
 	} {
 		if _, err := ExtractBytes(t.Context(), data, nil); !errors.Is(err, gofastcore.ErrUnsupported) {
@@ -99,6 +98,23 @@ func TestNotReadIsRefused(t *testing.T) {
 	doc := extract(t, pkg(t, "application/x-other", member{name: "content.xml", data: content("", `<text:p>new</text:p>`)}), nil)
 	if doc.Source.Format != "odt" || len(body(t, doc)) != 1 {
 		t.Errorf("OpenDocument body under another type: %+v", doc.Source)
+	}
+	// A content.xml that cannot be read as far as its body says nothing
+	// of what the file is: the document is read as a damaged text
+	// document, its headers and metadata kept, with a warning.
+	styles := member{name: "styles.xml", data: stylesXML("", "", `<style:master-page style:name="Standard"><style:header><text:p>Head</text:p></style:header></style:master-page>`)}
+	meta := member{name: "meta.xml", data: metaXML(`<dc:title>Kept</dc:title>`)}
+	for name, c := range map[string]string{
+		"not XML":   "not xml at all <<<",
+		"cut short": content("", `<text:p>body</text:p>`)[:250],
+	} {
+		doc := extract(t, pkg(t, "", member{name: "content.xml", data: c}, styles, meta), nil)
+		if doc.Source.Format != "odt" || doc.Metadata.Title != "Kept" || !hasWarning(doc, gofastcore.WarnPartFailed) {
+			t.Errorf("%s: %+v, title %q, warnings %+v", name, doc.Source, doc.Metadata.Title, doc.AllWarnings())
+		}
+		if b := body(t, doc); len(b) == 0 || b[0].Text != "Head" {
+			t.Errorf("%s: blocks %+v", name, b)
+		}
 	}
 }
 
@@ -155,7 +171,12 @@ func TestSheetColumnsCap(t *testing.T) {
 	if b := doc.Parts[0].Blocks; len(b) != 1 || b[0].Loc.Range != "CRXP1:CRXP3" {
 		t.Errorf("blocks %+v", b)
 	}
-	row = `<table:table-row><table:table-cell table:number-columns-repeated="65536"/><table:table-cell table:number-columns-repeated="4"/></table:table-row><table:table-row>` + cell("x") + `</table:table-row>`
+	// Cells past the bound that hold nothing (no cell in the sheet with
+	// as little would be kept) lose nothing.
+	row = `<table:table-row><table:table-cell table:number-columns-repeated="65536"/><table:table-cell table:number-columns-repeated="4"/>` +
+		`<table:table-cell><text:p/></table:table-cell><table:table-cell office:value-type="string"><text:p> </text:p></table:table-cell></table:table-row><table:table-row>` + cell("x") + `</table:table-row>` +
+		`<table:table-row table:number-rows-repeated="16777214"/><table:table-row table:number-rows-repeated="3">` +
+		`<table:table-cell><text:p/></table:table-cell></table:table-row>`
 	noLimits(t, extract(t, sheetDoc(t, `<table:table table:name="S">`+row+`</table:table>`), nil))
 }
 
@@ -186,6 +207,9 @@ func TestCellValueCap(t *testing.T) {
 }
 
 func TestValidationsCap(t *testing.T) {
+	if testing.Short() {
+		t.Skip("builds a document of several MB")
+	}
 	var sb strings.Builder
 	sb.WriteString(`<table:content-validations>`)
 	for i := range 16384 + 2 {
@@ -231,6 +255,14 @@ func TestChartCaps(t *testing.T) {
 	if got := body(t, doc)[0].Table.Rows[0][0]; len(got) != 65536 {
 		t.Errorf("cell of %d bytes", len(got))
 	}
+	// A long cell in a row past the last row kept is counted with the
+	// row, not as a cell cut.
+	doc = extract(t, textDoc(t, "", chart("", `<table:table-row table:number-rows-repeated="16384">`+cell("r")+`</table:table-row>`+
+		`<table:table-row>`+cell(strings.Repeat("v", 70000))+`</table:table-row>`)), nil)
+	saysOnce(t, doc, 0, "rows of a chart's table past 16384", "(1 rows)")
+	if n := len(limitsOn(doc, 0)); n != 1 {
+		t.Errorf("%d warnings: %q", n, limitsOn(doc, 0))
+	}
 	axis := `<chart:plot-area><chart:axis chart:dimension="x"><chart:title><text:p>` + strings.Repeat("X", 600) + `</text:p></chart:title></chart:axis>` +
 		`<chart:axis chart:dimension="y"><chart:title><text:p>` + strings.Repeat("Y", 600) + `</text:p></chart:title></chart:axis></chart:plot-area>`
 	doc = extract(t, textDoc(t, "", chart(axis, `<table:table-row>`+cell("1")+`</table:table-row>`)), nil)
@@ -254,23 +286,39 @@ func TestLabelAndAddressCaps(t *testing.T) {
 }
 
 func TestListIDsCap(t *testing.T) {
+	if testing.Short() {
+		t.Skip("builds documents of several MB")
+	}
 	var sb strings.Builder
 	for i := range 16384 + 1 {
 		fmt.Fprintf(&sb, `<text:numbered-paragraph text:list-id="L%d"><text:p>p</text:p></text:numbered-paragraph>`, i)
 	}
 	doc := extract(t, textDoc(t, "", sb.String()), nil)
-	saysOnce(t, doc, 0, "list identifiers past the first 16384", "(1 identifiers)")
+	saysOnce(t, doc, 0, "list identifiers or list style names", "(1 lists)")
+
+	// Style names: one already remembered is updated when the map is
+	// full, and is not counted; a new one is.
+	sb.Reset()
+	for i := range 16384 {
+		fmt.Fprintf(&sb, `<text:list text:style-name="S%d"><text:list-item><text:p>p</text:p></text:list-item></text:list>`, i)
+	}
+	sb.WriteString(`<text:list text:style-name="S0"><text:list-item><text:p>again</text:p></text:list-item></text:list>`)
+	noLimits(t, extract(t, textDoc(t, "", sb.String()), nil))
+	sb.WriteString(`<text:list text:style-name="Snew"><text:list-item><text:p>new</text:p></text:list-item></text:list>`)
+	saysOnce(t, extract(t, textDoc(t, "", sb.String()), nil), 0, "list style names", "(1 lists)")
 }
 
 func TestFormCaps(t *testing.T) {
 	var sb strings.Builder
-	sb.WriteString(`<office:forms><form:form>`)
-	for i := range 16384 + 3 {
-		fmt.Fprintf(&sb, `<form:text form:id="c%d" form:current-value="v"/>`, i)
+	if !testing.Short() { // a document of several MB
+		sb.WriteString(`<office:forms><form:form>`)
+		for i := range 16384 + 3 {
+			fmt.Fprintf(&sb, `<form:text form:id="c%d" form:current-value="v"/>`, i)
+		}
+		sb.WriteString(`</form:form></office:forms><text:p>body</text:p>`)
+		doc := extract(t, textDoc(t, "", sb.String()), nil)
+		saysOnce(t, doc, 0, "form controls past the first 16384", "(3 controls)")
 	}
-	sb.WriteString(`</form:form></office:forms><text:p>body</text:p>`)
-	doc := extract(t, textDoc(t, "", sb.String()), nil)
-	saysOnce(t, doc, 0, "form controls past the first 16384", "(3 controls)")
 
 	sb.Reset()
 	sb.WriteString(`<office:forms><form:form><form:listbox form:id="lb">`)
@@ -278,7 +326,7 @@ func TestFormCaps(t *testing.T) {
 		fmt.Fprintf(&sb, `<form:option form:label="o%d"/>`, i)
 	}
 	sb.WriteString(`</form:listbox></form:form></office:forms><text:p><draw:control draw:control="lb"/></text:p>`)
-	doc = extract(t, textDoc(t, "", sb.String()), nil)
+	doc := extract(t, textDoc(t, "", sb.String()), nil)
 	saysOnce(t, doc, 0, "options of a form list past the first 4096", "(4 options)")
 
 	sb.Reset()
@@ -318,6 +366,9 @@ func TestInlinePictureBudget(t *testing.T) {
 }
 
 func TestStylesAndManifestCaps(t *testing.T) {
+	if testing.Short() {
+		t.Skip("builds documents of several MB")
+	}
 	var sb strings.Builder
 	for i := range 1<<16 + 1 {
 		fmt.Fprintf(&sb, `<style:style style:name="s%d" style:family="paragraph"/>`, i)
@@ -345,5 +396,48 @@ func TestStylesAndManifestCaps(t *testing.T) {
 	saysOnce(t, doc, -1, "manifest.xml has more than 131072 entries")
 	if hasWarning(doc, WarnPartDamaged) {
 		t.Error("the manifest is said damaged")
+	}
+}
+
+// A bound is said on the part where content was lost, and only there; a
+// part not read loses nothing and says nothing.
+func TestCapWarningsOnTheirPart(t *testing.T) {
+	over := `<table:table-row><table:table-cell table:number-columns-repeated="65536"/>` + cell("lost") + `</table:table-row>`
+	sheets := `<table:table table:name="A">` + over + `</table:table>` +
+		`<table:table table:name="B"><table:table-row>` + cell("b") + `</table:table-row></table:table>` +
+		`<table:table table:name="C">` + over + over + `</table:table>`
+	doc := extract(t, sheetDoc(t, sheets), nil)
+	saysOnce(t, doc, 0, "past column 65536", "(1 cells)")
+	saysOnce(t, doc, 2, "past column 65536", "(2 cells)")
+	if len(limitsOn(doc, 1)) != 0 || len(limitsOn(doc, -1)) != 0 {
+		t.Errorf("sheet B %q, document %q", limitsOn(doc, 1), limitsOn(doc, -1))
+	}
+	// Only sheet 3: its warning, and none of sheet 1's.
+	doc = extract(t, sheetDoc(t, sheets), &gofastcore.Options{Parts: gofastcore.PartRange{First: 3, Last: 3}})
+	if len(doc.Parts) != 1 || doc.Parts[0].Number != 3 {
+		t.Fatalf("parts %+v", doc.Parts)
+	}
+	saysOnce(t, doc, 0, "past column 65536", "(2 cells)")
+	if len(limitsOn(doc, -1)) != 0 || len(doc.Parts[0].Warnings) != 1 {
+		t.Errorf("document %q, sheet %+v", limitsOn(doc, -1), doc.Parts[0].Warnings)
+	}
+
+	// Slides: a cut label on slide 2; a cut label in a master page, said
+	// on each slide that shows it (1 and 3).
+	long := strings.Repeat("N", 700)
+	master := `<style:master-page style:name="M"><draw:frame svg:y="1cm"><draw:text-box><text:list><text:list-item><text:number>` + long +
+		`</text:number><text:p>m</text:p></text:list-item></text:list></draw:text-box></draw:frame></style:master-page><style:master-page style:name="P"/>`
+	slide := func(m, text string) string {
+		return `<draw:page draw:master-page-name="` + m + `"><draw:frame><draw:text-box>` + text + `</draw:text-box></draw:frame></draw:page>`
+	}
+	body := `<office:presentation>` + slide("M", `<text:p>one</text:p>`) +
+		slide("P", `<text:list><text:list-item><text:number>`+long+`</text:number><text:p>two</text:p></text:list-item></text:list>`) +
+		slide("M", `<text:p>three</text:p>`) + `</office:presentation>`
+	doc = extract(t, bodyDoc(t, slideMIME, "", body, member{name: "styles.xml", data: stylesXML("", "", master)}), nil)
+	for i := range 3 {
+		saysOnce(t, doc, i, "labels longer than 512 bytes", "(1 labels)")
+	}
+	if len(limitsOn(doc, -1)) != 0 {
+		t.Errorf("document %q", limitsOn(doc, -1))
 	}
 }

@@ -2,6 +2,7 @@ package odt
 
 import (
 	"fmt"
+	"maps"
 	"slices"
 
 	"github.com/AOShei/go-fast-core"
@@ -217,8 +218,9 @@ func SetMaxRepeatedForTest(n int64) (restore func()) {
 //
 // The master's text is read, and charged to the text budget, once; each
 // further copy is charged again, and the copies over the presentation
-// are bounded by maxRepeated: the first slide past that says so, with
-// the number of slides left without their copy.
+// are bounded by maxRepeated: each slide past that says so, the first
+// with the number of slides left without their copy. What bounds left
+// out of a master's own content is said on each slide given it.
 func (r *reader) addMasters(parts []gofastcore.Part, uses []slideUse) {
 	want := map[string]int{}
 	for i, u := range uses {
@@ -233,7 +235,7 @@ func (r *reader) addMasters(parts []gofastcore.Part, uses []slideUse) {
 	// read with a scanner of their own.
 	saved := r.s
 	r.s = xmlscan.Scanner{}
-	masters := r.slideMasters(&parts[len(parts)-1], want)
+	masters, lostIn := r.slideMasters(&parts[len(parts)-1], want)
 	r.s = saved
 	costs := map[string]int{}
 	for name, blocks := range masters {
@@ -243,7 +245,8 @@ func (r *reader) addMasters(parts []gofastcore.Part, uses []slideUse) {
 	}
 	left := maxRepeated
 	full := false
-	first, skipped := -1, 0 // slides whose copy is left out
+	var skipped []int // slides whose copy is left out
+	said := map[string]bool{}
 	for i, u := range uses {
 		blocks := masters[u.master]
 		if len(blocks) == 0 || i >= len(parts) {
@@ -256,10 +259,7 @@ func (r *reader) addMasters(parts []gofastcore.Part, uses []slideUse) {
 		case want[u.master] == i:
 			// The first copy was charged when the master was read.
 		case left < n:
-			if first < 0 {
-				first = i
-			}
-			skipped++
+			skipped = append(skipped, i)
 			continue
 		case !r.budget.Take(costs[u.master]):
 			p.Warn(gofastcore.SeverityError, gofastcore.WarnLimitExceeded, textCut)
@@ -270,12 +270,30 @@ func (r *reader) addMasters(parts []gofastcore.Part, uses []slideUse) {
 		}
 		p.Blocks = slices.Insert(p.Blocks, min(u.notesAt, len(p.Blocks)), repeated(blocks)...)
 		p.Warnings = slices.DeleteFunc(p.Warnings, func(w gofastcore.Warning) bool { return w.Code == gofastcore.WarnPartNoText })
+		// What bounds left out of the master is left out of every slide
+		// that shows it.
+		for _, h := range lostIn[u.master] {
+			p.Warnings = append(p.Warnings, h.warning())
+		}
+		said[u.master] = true
 		p.Finish()
 	}
-	if skipped > 0 {
-		// Said once, on the first slide it concerns.
-		parts[first].Warn(gofastcore.SeverityError, gofastcore.WarnLimitExceeded, fmt.Sprintf(
-			"the text of the master page is left out on %d slides, this one the first: the slides of the presentation repeat more of it than is kept (%d blocks)", skipped, maxRepeated))
+	// Said on each slide it concerns, so that a slide read on its own
+	// says it too; the first gives the count.
+	for k, i := range skipped {
+		msg := fmt.Sprintf("the text of the slide's master page is left out: the slides of the presentation repeat more of it than is kept (%d blocks)", maxRepeated)
+		if k == 0 {
+			msg += fmt.Sprintf("; %d slides are left without it", len(skipped))
+		}
+		parts[i].Warn(gofastcore.SeverityError, gofastcore.WarnLimitExceeded, msg)
+	}
+	// A master no slide was given: what was lost of it goes on the
+	// document. The names are sorted so that the order does not vary.
+	names := slices.Sorted(maps.Keys(lostIn))
+	for _, name := range names {
+		if !said[name] {
+			r.hits = append(r.hits, lostIn[name]...)
+		}
 	}
 }
 
@@ -297,14 +315,15 @@ func repeated(from []gofastcore.Block) []gofastcore.Block {
 // slideMasters reads the master pages named in want from styles.xml,
 // with the heights of their page layouts, into the blocks of their own
 // text and pictures.
-func (r *reader) slideMasters(part *gofastcore.Part, want map[string]int) map[string][]gofastcore.Block {
+func (r *reader) slideMasters(part *gofastcore.Part, want map[string]int) (map[string][]gofastcore.Block, map[string][]capHit) {
 	if !r.pkg.Has("styles.xml") {
-		return nil
+		return nil, nil
 	}
 	c, err := r.pkg.Scan("styles.xml", &r.s)
 	if err != nil {
-		return nil
+		return nil, nil
 	}
+	lost := map[string][]capHit{}
 	defer c.Close()
 	r.sc = style.Styles
 	defer func() { r.sc = style.Content }()
@@ -323,7 +342,7 @@ func (r *reader) slideMasters(part *gofastcore.Part, want map[string]int) map[st
 		space, local := s.Space(), string(s.Local())
 		switch {
 		case space == ns.Office && local == "body":
-			return out // a flat file: the master pages came before
+			return out, lost // a flat file: the master pages came before
 		case space == ns.Office && s.Depth() == 2 && local != "automatic-styles" && local != "master-styles":
 			s.Skip()
 		case space == ns.Style && local == "page-layout":
@@ -344,13 +363,21 @@ func (r *reader) slideMasters(part *gofastcore.Part, want map[string]int) map[st
 			if !ok {
 				h = defaultSlideHeight
 			}
+			// What bounds leave out of a master is said on the slides
+			// that show it.
+			outer := r.hits
+			r.hits = nil
 			out[name] = r.masterItems(h)
+			if len(r.hits) > 0 {
+				lost[name] = r.hits
+			}
+			r.hits = outer
 		}
 	}
 	if err := s.Err(); err != nil && !r.stopped {
 		r.noteFailure(part, "styles.xml", err)
 	}
-	return out
+	return out, lost
 }
 
 // masterItems reads the children of a style:master-page: the shapes that
