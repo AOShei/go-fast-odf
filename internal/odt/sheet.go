@@ -241,6 +241,9 @@ func cellAddr(a string) (sheet string, row, col int, ok bool) {
 	return sheet, row - 1, col - 1, true
 }
 
+// maxValidations bounds the content validations kept.
+const maxValidations = 1 << 14
+
 // readValidations reads table:content-validations: the lists of values
 // cells offer.
 func (r *reader) readValidations() {
@@ -255,8 +258,12 @@ func (r *reader) readValidations() {
 			continue
 		}
 		name := r.attr(ns.Table, "name")
-		if text := listOf(r.attr(ns.Table, "condition")); text != "" && len(r.validations) < 1<<14 {
-			r.validations[name] = validation{text: text}
+		if text := listOf(r.attr(ns.Table, "condition")); text != "" {
+			if len(r.validations) < maxValidations {
+				r.validations[name] = validation{text: text}
+			} else if _, ok := r.validations[name]; !ok {
+				r.lost(capValidations, 1)
+			}
 		}
 		s.Skip()
 	}
@@ -468,21 +475,26 @@ func (sh *sheetIn) colStyle(col int) string {
 
 func (r *reader) sheetRow(sh *sheetIn, row *int) {
 	s := &r.s
-	n := repeat(r.attr(ns.Table, "number-rows-repeated"))
+	// Rows are counted up to the sheet's bound, not the bound on other
+	// repetitions, so that every row after keeps its address.
+	want := asked(r.attr(ns.Table, "number-rows-repeated"))
+	n := int(min(want, maxSheetRows))
 	hidden := visibility(r.attr(ns.Table, "visibility"))
 	rowStyle := r.attr(ns.Table, "default-cell-style-name")
 	top := *row
 	*row = min(top+n, maxSheetRows)
-	if top >= maxSheetRows {
-		s.Skip()
-		return
-	}
-	if hidden != 0 {
+	// A row past the last row read is read as any other, to count it if
+	// a cell of it holds something, and then left out.
+	pastRow := top >= maxSheetRows
+	rowHolds := false
+	if hidden != 0 && !pastRow {
 		sh.rows = append(sh.rows, span{from: top, to: *row - 1, hidden: hidden})
 	}
 	var cells []sheetCell
 	var notes []placed
 	var noValue int64
+	var lostCols int64               // cells with something past the last column
+	var cutValues, cutFormulas int64 // cells given whose value or formula was cut
 	col := 0
 	depth := s.Depth()
 	for {
@@ -498,13 +510,21 @@ func (r *reader) sheetRow(sh *sheetIn, row *int) {
 			continue
 		}
 		covered := string(s.Local()) == "covered-table-cell"
-		reps := repeat(r.attr(ns.Table, "number-columns-repeated"))
+		wantCols := asked(r.attr(ns.Table, "number-columns-repeated"))
+		// Past the last column read, a cell is read as any other, to
+		// count it if it holds something, and then left out.
+		past := pastRow || col >= maxSheetCols
+		if past && covered {
+			s.Skip()
+			continue
+		}
+		reps := int(min(wantCols, maxRepeat))
 		c := sheetCell{rows: 1, cols: 1}
 		if !covered {
 			c.rows = int32(min(repeat(r.attr(ns.Table, "number-rows-spanned")), maxSheetRows))
 			c.cols = int32(min(repeat(r.attr(ns.Table, "number-columns-spanned")), maxSheetCols))
 		}
-		if vname := r.attr(ns.Table, "content-validation-name"); vname != "" {
+		if vname := r.attr(ns.Table, "content-validation-name"); vname != "" && !past {
 			if _, ok := r.validations[vname]; ok {
 				sh.choose(vname, top, col, *row-1, min(col+reps, maxSheetCols)-1)
 			}
@@ -518,7 +538,8 @@ func (r *reader) sheetRow(sh *sheetIn, row *int) {
 		}
 		vt := r.attr(ns.Office, "value-type")
 		formula := r.attr(ns.Table, "formula")
-		value := cellValue(r, vt)
+		value, valueCut := cellValue(r, vt)
+		formulaCut := false
 		cs := r.set.Box(r.sc, "table-cell", styleName)
 		var content []gofastcore.Block
 		r.blocks(ctxt{}, &content)
@@ -541,12 +562,12 @@ func (r *reader) sheetRow(sh *sheetIn, row *int) {
 			hid |= reasons(&run{eff: cs})
 		}
 		c.text, c.hidden = text, hid
-		if formula != "" && text == "" && value == "" {
+		if formula != "" && text == "" && value == "" && !past {
 			noValue += int64(min(reps, maxSheetCols-col))
 		}
 		var more cellMore
 		if r.opts.Cells {
-			more.formula = clean.Label(formula)
+			more.formula, formulaCut = clean.Bounded(formula, maxValue)
 			more.typ, more.value = cellType(vt), value
 			if more.typ == gofastcore.CellText || more.value == text {
 				more.typ, more.value = 0, ""
@@ -563,42 +584,81 @@ func (r *reader) sheetRow(sh *sheetIn, row *int) {
 		if more != (cellMore{}) {
 			c.more = &more
 		}
+		if past {
+			switch {
+			case !holds(&c, rest):
+			case pastRow:
+				rowHolds = true
+			default:
+				lostCols = satAdd(lostCols, wantCols)
+			}
+			continue
+		}
 		for _, b := range rest {
 			notes = append(notes, placed{row: top, col: col, block: b})
 		}
-		has := c.text != "" || c.rows > 1 || c.cols > 1 || c.more != nil
+		has := holds(&c, nil) || c.rows > 1 || c.cols > 1
 		if covered || !has {
 			col = min(col+reps, maxSheetCols)
 		} else {
+			kept := int64(min(reps, maxSheetCols-col))
+			if holds(&c, nil) {
+				lostCols = satAdd(lostCols, wantCols-kept)
+			}
+			// Cuts are counted for every copy of the cell given.
+			if valueCut {
+				cutValues += kept
+			}
+			if formulaCut {
+				cutFormulas += kept
+			}
 			for k := 0; k < reps && col < maxSheetCols; k++ {
 				c.col = int32(col)
 				cells = append(cells, c)
 				col++
 			}
 		}
-		if col >= maxSheetCols {
-			break // the rest of the row is passed over by the caller
+	}
+	if pastRow {
+		if rowHolds {
+			r.lost(capSheetRows, want)
 		}
+		return
 	}
 	// The row's cells, once for every row it stands for. The cells a
 	// sheet holds before its tables are made are bounded by what they
 	// take in memory (heldCell bytes each) against the text the document
 	// may still hold, so that a few bytes repeated cannot fill memory;
 	// the tables then charge the budget in full.
-	for rr := top; rr < *row && len(cells) > 0; rr++ {
+	// What bounds left out is counted for the rows given, not for rows
+	// a limit stopped before.
+	rr := top
+	for ; rr < *row && len(cells) > 0; rr++ {
 		if r.maxCells >= 0 && r.cells+int64(len(cells)) > r.maxCells {
 			r.stop("the limit on table cells was reached; the workbook is cut off there")
-			return
+			break
 		}
 		if r.budget != nil && int64(len(sh.cells)+len(cells))*heldCell > r.budget.Left() {
 			r.stop(textCut)
-			return
+			break
 		}
 		r.cells += int64(len(cells))
 		for _, c := range cells {
 			c.row = int32(rr)
 			sh.cells = append(sh.cells, c)
 		}
+	}
+	if len(cells) == 0 {
+		rr = *row // rows with nothing kept: none is stopped before
+	}
+	r.lost(capSheetCols, satMul(lostCols, int64(rr-top)))
+	r.lost(capCellValue, satMul(cutValues, int64(rr-top)))
+	r.lost(capCellFormula, satMul(cutFormulas, int64(rr-top)))
+	if rr < *row {
+		return
+	}
+	if len(cells) > 0 || lostCols > 0 {
+		r.lost(capSheetRows, want-int64(*row-top))
 	}
 	sh.notes = append(sh.notes, notes...)
 	sh.noValue += noValue * int64(*row-top)
@@ -615,8 +675,9 @@ func (sh *sheetIn) choose(name string, r0, c0, r1, c1 int) {
 	b[0], b[1], b[2], b[3] = min(b[0], r0), min(b[1], c0), max(b[2], r1), max(b[3], c1)
 }
 
-// cellValue returns the value a cell stores, as the file writes it.
-func cellValue(r *reader, vt string) string {
+// cellValue returns the value a cell stores, as the file writes it, and
+// whether it was cut at maxValue.
+func cellValue(r *reader, vt string) (string, bool) {
 	var v []byte
 	switch vt {
 	case "date":
@@ -628,12 +689,19 @@ func cellValue(r *reader, vt string) string {
 	case "string":
 		v, _ = r.s.Attr(ns.Office, "string-value")
 	case "":
-		return ""
+		return "", false
 	default:
 		v, _ = r.s.Attr(ns.Office, "value")
 	}
 	out, _ := clean.String(v, clean.Prose)
-	return clean.Label(out)
+	return clean.Bounded(out, maxValue)
+}
+
+// holds reports whether a cell, read, holds something to give: text,
+// details (a formula, a value, a link) or notes that stand in it. Cells
+// in the sheet and cells past its bounds are judged by it alike.
+func holds(c *sheetCell, rest []gofastcore.Block) bool {
+	return c.text != "" || c.more != nil || len(rest) > 0
 }
 
 func cellType(vt string) gofastcore.CellType {

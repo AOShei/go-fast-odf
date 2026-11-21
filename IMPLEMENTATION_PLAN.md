@@ -5,7 +5,7 @@ Development history, kept for reference. What the library does is in
 
 Module `github.com/AOShei/go-fast-odf`, package `gofastodf`. Extracts
 OpenDocument files (ODF 1.0 to 1.3, and ODF 1.4's encrypted package) into
-the go-fast-core model (core pinned at commit d4cd8e2, schema 0.2).
+the go-fast-core model (go-fast-core v0.1.1, schema 0.2).
 Standard library and go-fast modules only.
 
 ## Layout

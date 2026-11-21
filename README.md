@@ -10,7 +10,7 @@ if err != nil { ... }
 fmt.Println(doc.Markdown())
 ```
 
-**Status: v0.1.0 (2026-11-21).** Text documents (`.odt`, with the template `.ott`, master documents `.odm` and `.otm`, and web pages `.oth`), spreadsheets (`.ods`, `.ots`), presentations (`.odp`, `.otp`), and the flat XML variants (`.fodt`, `.fods`, `.fodp`) are read. Password-protected packages are decrypted (AES-CBC with PBKDF2; ODF 1.4's AES-GCM with Argon2id; Blowfish CFB of ODF 1.0 and 1.1). Drawings, charts, formulas, images and databases as documents in their own right, and `.sxw`, give `ErrUnsupported`.
+**Status: v0.1.1 (2026-11-22).** Text documents (`.odt`, with the template `.ott`, master documents `.odm` and `.otm`, and web pages `.oth`), spreadsheets (`.ods`, `.ots`), presentations (`.odp`, `.otp`), and the flat XML variants (`.fodt`, `.fods`, `.fodp`) are read. Password-protected packages are decrypted (AES-CBC with PBKDF2; ODF 1.4's AES-GCM with Argon2id; Blowfish CFB of ODF 1.0 and 1.1). Drawings, charts, formulas, images and databases as documents in their own right, and the OpenOffice.org 1 formats, give `ErrUnsupported`.
 
 ## API
 
@@ -97,7 +97,7 @@ One part of kind `slide` per `draw:page`. `Name` is the text of the title frame 
 
 - Frames, shapes and groups are put in reading order: the title first, then from top to bottom (`svg:y`) and, at one height, left to right (`svg:x`); an item with no position keeps the place of the one before it.
 - The title's paragraphs are `heading` level 1. Footer, date-time and page-number placeholders are `footer` blocks, header placeholders `header` blocks. Other text is paragraphs and list items as in a text document.
-- **Master-page text.** The shapes of a slide's master page (`draw:master-page-name` → `style:master-page` in styles.xml) that are not placeholders (no `presentation:class`, not `presentation:placeholder="true"`) are given on every slide that uses the master and shows its objects, before its notes, in reading order, as go-fast-ooxml gives a layout's and master's own text. A slide whose drawing-page style (or a parent of it) declares `presentation:background-objects-visible="false"` does not show them and gets none. A hidden slide's copy is hidden with the slide. The text of a master is on every slide that uses it, so a long master and many slides can ask for much more than the file holds: each copy is charged to the text budget, at most 2^20 blocks are repeated in this way over a presentation, and a slide past that says so with `limit.exceeded`. Their text is `header` if the shape starts in the upper half of the master's page layout (`fo:page-height`; 15.75 cm when none is given), `footer` if in the lower; pictures and tables keep their kinds. The master's placeholders (title, outline, header, footer, date-time, page-number) and its notes master are not content. Masters no slide uses are not read.
+- **Master-page text.** The shapes of a slide's master page (`draw:master-page-name` → `style:master-page` in styles.xml) that are not placeholders (no `presentation:class`, not `presentation:placeholder="true"`) are given on every slide that uses the master and shows its objects, before its notes, in reading order, as go-fast-ooxml gives a layout's and master's own text. A slide whose drawing-page style (or a parent of it) declares `presentation:background-objects-visible="false"` does not show them and gets none. A hidden slide's copy is hidden with the slide. The text of a master is on every slide that uses it, so a long master and many slides can ask for much more than the file holds: each copy is charged to the text budget, at most 2^20 blocks are repeated in this way over a presentation, and each slide past that says so with `limit.exceeded`, the first with the number of slides left without their copy. What a bound leaves out of a master's own content is said on each slide that shows it, in the one warning that slide gives for that bound; an embedded document or picture it leaves out is said once, on the document. Their text is `header` if the shape starts in the upper half of the master's page layout (`fo:page-height`; 15.75 cm when none is given), `footer` if in the lower; pictures and tables keep their kinds. The master's placeholders (title, outline, header, footer, date-time, page-number) and its notes master are not content. Masters no slide uses are not read.
 - **Speaker notes** (`presentation:notes`) are one `note` block of type `speaker` at the end of the slide.
 
 ## Flat files
@@ -139,13 +139,13 @@ Codes of this library:
 | `odf.unread_content` | The document holds content this version does not read: an embedded formula or chart it could not read, an embedded object whose directory has no `content.xml`, a document held whole in a flat file, plug-ins and floating frames, pictures over 64 MiB held in a flat file. The message counts them |
 | `odf.region_split` | An area of a sheet with thinly spread cells was written as one table per run of cells in a row |
 | `odf.formula_no_value` | Cells of a sheet hold formulas with no stored result (no value attribute, no text), so they show nothing; one warning per sheet with the count (info). The formulas stay in `Table.Cells` |
-| `odf.part_damaged` | A supporting stream (manifest, styles, metadata) could not be read to its end; what was read is used |
+| `odf.part_damaged` | A supporting stream (manifest, styles, metadata) could not be read to its end; what was read is used. More styles or manifest entries than are read is `limit.exceeded` |
 | `odf.property_truncated` | A metadata value was cut at 64 KiB, or keywords or user-defined properties beyond 256 were left out |
 | `odf.control_characters_removed` | Control characters with no meaning as text were removed |
 
 ## Errors
 
-`ErrMalformed` (not a zip archive, no `content.xml`, archive too damaged), `ErrUnsupported` (not OpenDocument; a kind not read, as listed under "Not read"; an encryption this version does not decrypt), `ErrPasswordRequired` (encrypted, no password), `ErrWrongPassword` (the checksum or authentication tag does not match the password given), `ErrLimitExceeded` (also: the manifest asks for more key-derivation work than the caps below), `ErrNoPartsSelected`.
+`ErrMalformed` (not a zip archive, no `content.xml`, archive too damaged), `ErrUnsupported` (not OpenDocument, including a package whose media type is not OpenDocument's and whose `content.xml` has no OpenDocument body; a kind not read, as listed under "Not read"; an encryption this version does not decrypt), `ErrPasswordRequired` (encrypted, no password), `ErrWrongPassword` (the checksum or authentication tag does not match the password given), `ErrLimitExceeded` (also: the manifest asks for more key-derivation work than the caps below), `ErrNoPartsSelected`.
 
 ## Encryption
 
@@ -161,7 +161,9 @@ The manifest sets the cost of a key, so it is capped: PBKDF2 at 10 million itera
 
 ## Limits
 
-Every limit of `gofastcore.Options.Limits` applies. `MaxDecodedBytes` (default 2 GiB) is charged per byte read from the archive and shared with embedded documents. `MaxTextBytes` (default 256 MiB) is charged for every block (`BlockCost` plus its text and marker), every table cell (`CellCost` plus its text) and link targets; a paragraph stops growing when it would exceed what is left, so `text:s` with a huge count cannot expand past the budget. `Extractor.MaxCells` (default 20 million) bounds table cells; repetition attributes are capped at 2^20 rows or cells each and tables at 16,384 columns. The XML scanner refuses DTDs and bounds nesting depth and token size. A cut archive is read through the members' own headers (`input.repaired`).
+Every limit of `gofastcore.Options.Limits` applies. `MaxDecodedBytes` (default 2 GiB) is charged per byte read from the archive and shared with embedded documents. `MaxTextBytes` (default 256 MiB) is charged for every block (`BlockCost` plus its text and marker), every table cell (`CellCost` plus its text) and link targets; a paragraph stops growing when it would exceed what is left, so `text:s` with a huge count cannot expand past the budget. `Extractor.MaxCells` (default 20 million) bounds table cells; repetition attributes are capped at 2^20 rows or cells each (a sheet's rows at 2^24, so that every row keeps its address), tables of a text document at 16,384 columns, and sheets at 65,536 columns and 2^24 rows. The XML scanner refuses DTDs and bounds nesting depth and token size. A cut archive is read through the members' own headers (`input.repaired`).
+
+Fixed bounds that can leave content out say so with `limit.exceeded` (severity error), once per bound on the part concerned (on the document for content validations, styles and the manifest; a part not selected by `Options.Parts` is not read and says nothing), with what and how much was left out: table cells past those columns and rows; repetitions of a text table's row past 2^20; a cell's stored value and formula past 64 KiB; a formula's text and StarMath source past 64 KiB; a chart's table past 16,384 rows, 1,024 columns or 64 KiB in a cell; embedded documents past 4,096; form controls past 16,384, a list's options and a drop-down field's values past 4,096; content validations past 16,384; note citations, list and heading numbers and axis titles past 512 bytes; link addresses past 8 KiB; a list that continues one whose identifier or style name was not remembered (past 16,384 of each; its numbering restarts); styles past 65,536; manifest entries past 131,072. A picture whose bytes `MaxDecodedBytes` cannot hold is said the same way. Metadata values and pictures over 64 MiB in a flat file keep their own codes (`odf.property_truncated`, `odf.unread_content`).
 
 ## Corpus test
 
@@ -187,7 +189,7 @@ In every kind of document, `draw:object` and `draw:object-ole` in a frame are re
 
 ## Not read
 
-Drawings (`.odg`, `.otg`, `.fodg`), charts (`.odc`), formulas (`.odf`), images (`.odi`) and databases (`.odb`) as documents in their own right (`ErrUnsupported`); documents held whole inside a flat file's `draw:object` (`odf.unread_content`); change-tracked insertions are not marked in the text. Of the OpenOffice.org 1 formats, `.sxw` is refused (`ErrUnsupported`).
+Drawings (`.odg`, `.otg`, `.fodg`), charts (`.odc`), formulas (`.odf`), images (`.odi`) and databases (`.odb`) as documents in their own right (`ErrUnsupported`); documents held whole inside a flat file's `draw:object` (`odf.unread_content`); change-tracked insertions are not marked in the text. The OpenOffice.org 1 formats (`.sxw`, `.sxc`, `.sxi`, `.sxd`, `.sxm`, `.sxg` and the templates `.stw`, `.stc`, `.sti`, `.std`) are refused (`ErrUnsupported`).
 
 ## Provenance
 

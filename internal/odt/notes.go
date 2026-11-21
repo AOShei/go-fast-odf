@@ -138,7 +138,7 @@ func (r *reader) note(p *para, ru run) {
 				label = string(v)
 			}
 			marker, _ = clean.String([]byte(label), clean.Prose)
-			marker = clean.Label(marker)
+			marker = r.label(marker)
 		case "note-body":
 			r.blocks(ctxt{hidden: reasons(&ru) & gofastcore.DisplayHidden}, &body)
 		}

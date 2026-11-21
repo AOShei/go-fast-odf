@@ -106,18 +106,26 @@ func TestMasterPageTextCap(t *testing.T) {
 	master.WriteString(`</style:master-page>`)
 	body := `<office:presentation>` + strings.Repeat(`<draw:page draw:master-page-name="M"/>`, 100) + `</office:presentation>`
 	doc := extract(t, bodyDoc(t, slideMIME, "", body, member{name: "styles.xml", data: stylesXML("", "", master.String())}), nil)
-	blocks, warned := 0, 0
-	for _, p := range doc.Parts {
+	blocks := 0
+	for i, p := range doc.Parts {
 		blocks += len(p.Blocks)
+		n := 0
 		for _, w := range p.Warnings {
 			if w.Code == gofastcore.WarnLimitExceeded {
-				warned++
+				n++
+				if i == 13 && !strings.Contains(w.Message, "87 slides") {
+					t.Errorf("first slide left without: %q", w.Message)
+				}
 			}
 		}
+		// The first copy, then 500/40 = 12 more; each slide left
+		// without says so once.
+		if want := min(1, max(0, i-12)); n != want {
+			t.Errorf("slide %d: %d warnings, want %d", i+1, n, want)
+		}
 	}
-	// The first copy, then 500/40 = 12 more.
-	if blocks != 40*13 || warned != 100-13 {
-		t.Errorf("%d blocks, %d slides warned", blocks, warned)
+	if blocks != 40*13 {
+		t.Errorf("%d blocks", blocks)
 	}
 	if err := doc.Validate(); err != nil {
 		t.Error(err)

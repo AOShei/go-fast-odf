@@ -109,6 +109,33 @@ func TestPrintableRun(t *testing.T) {
 	}
 }
 
+// Bounded says whether its bound left out anything but white space, and
+// cuts as Label does.
+func TestBounded(t *testing.T) {
+	for _, c := range []struct {
+		in    string
+		limit int
+		out   string
+		cut   bool
+	}{
+		{"abc", 3, "abc", false},
+		{"abcd", 3, "abc", true},
+		{"abc   ", 3, "abc", false},
+		{"abc \n d", 3, "abc", true},
+	} {
+		in := c.in
+		if out, cut := Bounded(in, c.limit); out != c.out || cut != c.cut {
+			t.Errorf("Bounded(%q, %d) = %q, %v", in, c.limit, out, cut)
+		}
+	}
+	if out, cut := LabelCut(strings.Repeat("x", 600)); len(out) != maxLabel || !cut {
+		t.Errorf("LabelCut: %d bytes, %v", len(out), cut)
+	}
+	if out, cut := AddressCut(strings.Repeat("x", 600)); len(out) != 600 || cut {
+		t.Errorf("AddressCut: %d bytes, %v", len(out), cut)
+	}
+}
+
 func BenchmarkAppend(b *testing.B) {
 	for name, text := range map[string]string{
 		"plain":    strings.Repeat("The quarterly figures for the northern region, as reported. ", 20),
