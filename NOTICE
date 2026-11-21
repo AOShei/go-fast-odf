@@ -12,5 +12,12 @@ the same MIT License. Each copied file says so in its first lines:
   internal/display/display.go  (go-fast-ooxml internal/hidden)
   internal/odpkg/recover.go    (go-fast-ooxml internal/opc/recover.go)
 
-No third-party data tables are included. List numbering formats (1, a, A,
-i, I) are computed, not tabulated.
+Argon2id and BLAKE2b (internal/argon2) are written from RFC 9106 and
+RFC 7693, and Blowfish (internal/blowfish) from Schneier's description.
+BLAKE2b's initialisation vector and message schedule (sigma) are typed in
+as RFC 7693 gives them (internal/argon2/blake2b.go). Blowfish's initial
+P-array and S-boxes, the hexadecimal digits of pi, are computed on first
+use, not typed in. The tests hold published test vectors: the RFCs', one
+from the Argon2 reference implementation, and Eric Young's set for
+Blowfish. List numbering formats (1, a, A, i, I) are computed, not
+tabulated.

@@ -1,23 +1,50 @@
 # Changelog
 
 All notable changes to go-fast-odf are recorded here, in the style of
-[Keep a Changelog](https://keepachangelog.com/en/1.1.0/). No version has
-been released yet.
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## Unreleased: core d4cd8e2
+## v0.1.0 (not yet tagged)
+
+The first release. Built on go-fast-core schema 0.2, pinned at `d4cd8e2`.
+
+- Reads OpenDocument text documents (odt, ott, odm, otm, oth),
+  spreadsheets (ods, ots) and presentations (odp, otp), and the flat XML
+  forms fodt, fods and fodp. The format is decided from the file, never
+  from its name. Drawings, charts, formulas, images and databases as
+  documents in their own right, and sxw, give `ErrUnsupported`.
+- Decrypts encrypted packages with `Options.Password`: AES-CBC with
+  PBKDF2 (ODF 1.2, 1.3), ODF 1.4's encrypted package (AES-GCM with
+  Argon2id), and Blowfish CFB (ODF 1.0, 1.1). The key-derivation work a
+  manifest may ask for is capped.
+- Parts: a text document is one `body` part; a spreadsheet one `sheet`
+  part per sheet, its used regions as tables; a presentation one `slide`
+  part per slide, with master-page text and speaker notes. Values the
+  file keeps and never shows go to a last `stored` part. Embedded
+  formulas and charts become blocks, form controls paragraphs, and other
+  embedded documents are handed to `Options.Child`.
+- `Display` records only what the file declares: `hidden` and `no_ink`.
+- The command `gofastodf` prints JSON, Markdown or text. Flags:
+  `-format`, `-parts`, `-images`, `-password`, `-spans`, `-cells`,
+  `-furniture`, `-stored[=kinds]`, `-part-markers`, `-children`,
+  `-exclude-display[=reasons]`, `-max-cells`, `-max-decoded-bytes`,
+  `-max-text-bytes`, `-o`, `-quiet`, `-version`.
+
+## Before v0.1.0
+
+Development history, newest first. Nothing was released before v0.1.0.
+
+### Core d4cd8e2
 
 - go-fast-core pinned at `d4cd8e2`: `Validate` now rejects an inferred
   `thematic_break`; this library emits only declared ones and passes.
 
-## [Unreleased]
-
-### Changed: no inferred thematic break (branch `no-inferred-break`)
+### Changed: no inferred thematic break
 
 - A `thematic_break` is emitted only where the file declares one: an
   empty paragraph of the body in LibreOffice's "Horizontal Line" style
   (or one inheriting from it), now with `Origin` `native` (was
   `inferred`).
-- Removed (R7): an empty paragraph with only a bottom border no longer
+- Removed: an empty paragraph with only a bottom border no longer
   becomes a break; it is a border and gives no block. The adjacency
   check that took a break back when the next paragraph shared its
   border, and the paragraph-border reading only it used, are gone.
@@ -31,7 +58,7 @@ been released yet.
   the empty paragraph is left out as before.
   Headings in that style are not breaks.
 
-### Changed: stored kinds (branch `stored-kinds`)
+### Changed: stored kinds
 
 - Pins go-fast-core `ebecf3c` (`RenderOptions.StoredKinds`,
   `StoredKindNames`, and the `Validate` rule that every `type=field` note
@@ -43,7 +70,7 @@ been released yet.
   `=all` for every kind, `=false` or `=` for none, `=k1,k2` (or `+`) for
   those kinds; an unknown kind is an error listing the kinds, exit 2.
 
-### Added: sheets and slides (branch `phase-7-sheets-slides`)
+### Added: sheets and slides
 
 - `odf.formula_no_value` (info): a sheet's cells that hold a formula and
   no stored result (no `office:*value` attribute, no text) are counted,
@@ -62,7 +89,7 @@ been released yet.
   2^20 blocks over a presentation, each charged to the text budget; a
   slide past the bound gets `limit.exceeded`.
 
-### Changed: decryption limits (branch `review-2`)
+### Changed: decryption limits
 
 - Argon2id is capped at 256 MiB of memory per key (was 1 GiB), memory
   times passes at 1 GiB per key (was 4 GiB) and 2 GiB per package (was
@@ -76,7 +103,7 @@ been released yet.
   `ErrLimitExceeded`. Its members share the outer package's
   key-derivation caps instead of having their own.
 
-### Added: decryption (branch `phase-6-decryption`)
+### Added: decryption
 
 - Packages encrypted with AES-CBC and PBKDF2 (SHA-1 or SHA-256 start
   key; `SHA1/1K` or `sha256-1k` checksum) are decrypted with
@@ -105,7 +132,7 @@ been released yet.
   documents follow, each after a line naming it; `-children=false` leaves
   them out.
 
-### Changed: declared, not judged (branch `declared-not-judged`)
+### Changed: declared, not judged
 
 - Pins go-fast-core `05bbddb`, schema 0.2. Blocks, spans, table regions
   and parts carry `Display` with only what the file declares: `hidden`
