@@ -3,8 +3,10 @@
 All notable changes to go-fast-odf are recorded here, in the style of
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## v0.1.1 (not yet tagged)
+## v0.1.1 (2026-11-22)
 
+- Built on go-fast-core v0.1.1: a part or document keeps at most 1,000
+  warnings, and the rest are counted in one `warnings.omitted` warning.
 - The OpenOffice.org 1 formats other than sxw (sxc, sxi, sxd, sxm, sxg
   and the templates stw, stc, sti, std) give `ErrUnsupported`; they were
   reported as an empty odt. A package whose media type is not
