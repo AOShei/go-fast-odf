@@ -34,7 +34,9 @@ func IDKey(password, salt, secret, ad []byte, time, memory, lanes, keyLen uint32
 }
 
 // IDKeyContext is IDKey that stops, with the context's error, once ctx is
-// done. It looks at ctx before each segment.
+// done. It looks at ctx every checkEvery blocks: a segment can be tens of
+// thousands of blocks, too long to wait for under a slow build such as
+// the race detector's.
 func IDKeyContext(ctx context.Context, password, salt, secret, ad []byte, time, memory, lanes, keyLen uint32) ([]byte, error) {
 	if time < 1 || lanes < 1 || lanes > maxLanes || keyLen < 4 || memory < minMemory*lanes {
 		return nil, ErrParams
@@ -61,10 +63,9 @@ func IDKeyContext(ctx context.Context, password, salt, secret, ad []byte, time, 
 	for n := uint32(0); n < time; n++ {
 		for slice := uint32(0); slice < syncPts; slice++ {
 			for lane := uint32(0); lane < lanes; lane++ {
-				if err := ctx.Err(); err != nil {
+				if err := segment(ctx, B, n, slice, lane, lanes, q, seg, m, time); err != nil {
 					return nil, err
 				}
-				segment(B, n, slice, lane, lanes, q, seg, m, time)
 			}
 		}
 	}
@@ -83,7 +84,11 @@ func IDKeyContext(ctx context.Context, password, salt, secret, ad []byte, time, 
 	return hashLong(cb[:], keyLen), nil
 }
 
-func segment(B []block, n, slice, lane, lanes, q, seg, m, time uint32) {
+// checkEvery is how many blocks are made between looks at the context:
+// a look costs next to nothing beside a thousand compressions.
+const checkEvery = 1 << 10
+
+func segment(ctx context.Context, B []block, n, slice, lane, lanes, q, seg, m, time uint32) error {
 	var addr, in, zero block
 	independent := n == 0 && slice < syncPts/2
 	if independent {
@@ -100,6 +105,11 @@ func segment(B []block, n, slice, lane, lanes, q, seg, m, time uint32) {
 	}
 	offset := lane*q + slice*seg + index
 	for ; index < seg; index, offset = index+1, offset+1 {
+		if index%checkEvery == 0 {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+		}
 		prev := offset - 1
 		if index == 0 && slice == 0 {
 			prev += q // the lane's last block
@@ -118,6 +128,7 @@ func segment(B []block, n, slice, lane, lanes, q, seg, m, time uint32) {
 		ref := refIndex(rand, q, seg, lanes, n, slice, lane, index)
 		compress(&B[offset], &B[prev], &B[ref], n > 0)
 	}
+	return nil
 }
 
 // refIndex maps a pseudo-random word to the block referenced, as RFC
