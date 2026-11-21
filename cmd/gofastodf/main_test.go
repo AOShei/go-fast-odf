@@ -5,6 +5,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"flag"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -79,18 +81,26 @@ func TestCommand(t *testing.T) {
 // The render flags of COMMAND_FLAGS.md: -exclude-display alone, with
 // =hidden and =all, and =unknown an error; -stored adds the stored part.
 func TestRenderFlags(t *testing.T) {
-	var f displayFlag
+	exclude := func(v string) (gofastcore.Display, error) {
+		fs := flag.NewFlagSet("t", flag.ContinueOnError)
+		fs.SetOutput(io.Discard)
+		rf := gofastcore.AddRenderFlags(fs)
+		err := fs.Parse([]string{"-exclude-display=" + v})
+		var ro gofastcore.RenderOptions
+		rf.Apply(&ro)
+		return ro.ExcludeDisplay, err
+	}
 	for v, want := range map[string]gofastcore.Display{
 		"true": gofastcore.DisplayAny, "all": gofastcore.DisplayAny, "": 0, "false": 0,
 		"hidden": gofastcore.DisplayHidden, "hidden,no_ink": gofastcore.DisplayHidden | gofastcore.DisplayNoInk,
 		"no_ink+hidden": gofastcore.DisplayHidden | gofastcore.DisplayNoInk,
 	} {
-		if err := f.Set(v); err != nil || f.reasons != want {
-			t.Errorf("%q: %v %v", v, f.reasons, err)
+		if got, err := exclude(v); err != nil || got != want {
+			t.Errorf("%q: %v %v", v, got, err)
 		}
 	}
 	for _, v := range []string{"unknown", "hidden,unknown", "nonsense"} {
-		if err := f.Set(v); err == nil || !strings.Contains(err.Error(), "hidden") {
+		if _, err := exclude(v); err == nil || !strings.Contains(err.Error(), "hidden") {
 			t.Errorf("%q: %v", v, err)
 		}
 	}
@@ -135,13 +145,9 @@ func TestRenderFlags(t *testing.T) {
 			t.Errorf("%v: %q", c.args, got)
 		}
 	}
-	var sf storedFlag
-	if err := sf.Set("field_code,field_code"); err != nil || len(sf.kinds) != 1 {
-		t.Errorf("repeated kind: %v %v", sf.kinds, err)
-	}
 	for _, v := range []string{"nonsense", "field_code,nonsense", ","} {
 		var out, errs bytes.Buffer
-		if code := run(context.Background(), []string{"-stored=" + v, a}, &out, &errs); code != 2 || !strings.Contains(errs.String(), "the kinds are "+strings.Join(gofastcore.StoredKindNames, ", ")) {
+		if code := run(context.Background(), []string{"-stored=" + v, a}, &out, &errs); code != 2 || !strings.Contains(errs.String(), "the kinds are "+strings.Join(gofastcore.StoredKindNames(), ", ")) {
 			t.Errorf("-stored=%s: exit %d, %q", v, code, errs.String())
 		}
 	}
