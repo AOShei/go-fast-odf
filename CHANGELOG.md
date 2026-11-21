@@ -3,7 +3,7 @@
 All notable changes to go-fast-odf are recorded here, in the style of
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## v0.1.0 (not yet tagged)
+## v0.1.0 (2026-11-21)
 
 The first release. Built on go-fast-core v0.1.0, schema 0.2.
 
