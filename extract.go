@@ -165,6 +165,15 @@ var kinds = map[string]string{
 	"application/vnd.oasis.opendocument.image":                 "odi",
 	"application/vnd.oasis.opendocument.database":              "odb",
 	"application/vnd.sun.xml.writer":                           "sxw",
+	"application/vnd.sun.xml.writer.template":                  "stw",
+	"application/vnd.sun.xml.writer.global":                    "sxg",
+	"application/vnd.sun.xml.calc":                             "sxc",
+	"application/vnd.sun.xml.calc.template":                    "stc",
+	"application/vnd.sun.xml.impress":                          "sxi",
+	"application/vnd.sun.xml.impress.template":                 "sti",
+	"application/vnd.sun.xml.draw":                             "sxd",
+	"application/vnd.sun.xml.draw.template":                    "std",
+	"application/vnd.sun.xml.math":                             "sxm",
 	"application/vnd.oasis.opendocument.spreadsheet-flat-xml":  "fods",
 	"application/vnd.oasis.opendocument.text-flat-xml":         "fodt",
 	"application/vnd.oasis.opendocument.presentation-flat-xml": "fodp",
@@ -196,8 +205,10 @@ var mimeOf = map[string]string{
 //     damaged to read.
 //   - ErrUnsupported: a zip archive or XML document that is not
 //     OpenDocument; an OpenDocument file of a kind this version does not
-//     read (drawings, charts, formulas, images, databases, OpenOffice.org
-//     1 text documents); an encryption this version does not decrypt
+//     read (drawings, charts, formulas, images, databases, the
+//     OpenOffice.org 1 formats sxw, sxc, sxi, sxd, sxm, sxg and their
+//     templates); a file whose media type is not OpenDocument's and whose
+//     content.xml has no OpenDocument body; an encryption this version does not decrypt
 //     (an algorithm, key derivation or checksum other than AES-CBC,
 //     AES-GCM, Blowfish CFB, PBKDF2, Argon2id, SHA-1 and SHA-256).
 //   - ErrPasswordRequired: the file is encrypted and Options.Password is
@@ -303,6 +314,9 @@ func (e *Extractor) Extract(ctx context.Context, r io.ReaderAt, size int64, opts
 	if pkg.ManifestDamaged() {
 		warn(gofastcore.SeverityWarning, WarnPartDamaged, "META-INF/manifest.xml could not be read to its end")
 	}
+	if pkg.ManifestFull() {
+		warn(gofastcore.SeverityError, gofastcore.WarnLimitExceeded, fmt.Sprintf("META-INF/manifest.xml has more than %d entries; the rest were not read", odpkg.MaxManifestEntries))
+	}
 	switch {
 	case md.Budget:
 		warn(gofastcore.SeverityError, gofastcore.WarnLimitExceeded, "decompressed size limit reached while reading meta.xml")
@@ -329,7 +343,7 @@ func (e *Extractor) Extract(ctx context.Context, r io.ReaderAt, size int64, opts
 		}
 	}
 	if set.Truncated {
-		warn(gofastcore.SeverityWarning, WarnPartDamaged, "the document defines more styles than are read; the rest are not used")
+		warn(gofastcore.SeverityError, gofastcore.WarnLimitExceeded, fmt.Sprintf("the document defines more than %d styles; the rest are not used", style.MaxStyles))
 	}
 
 	res, err := odt.Read(ctx, pkg, set, &o, odt.Config{MaxCells: gofastcore.ResolveLimit(e.MaxCells, DefaultMaxCells)})
@@ -341,6 +355,11 @@ func (e *Extractor) Extract(ctx context.Context, r io.ReaderAt, size int64, opts
 	}
 	byBody := map[string]string{"text": "odt", "": "odt", "spreadsheet": "ods", "presentation": "odp"}
 	if !known {
+		if res.Kind == "" {
+			// Neither the media type nor the content says what the file
+			// is: its content.xml has no OpenDocument body.
+			return nil, fmt.Errorf("gofastodf: the package's content has no OpenDocument body: %w", gofastcore.ErrUnsupported)
+		}
 		f, ok := byBody[res.Kind]
 		if !ok {
 			return nil, fmt.Errorf("gofastodf: the document's body is office:%s, which this version does not read: %w", res.Kind, gofastcore.ErrUnsupported)

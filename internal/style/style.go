@@ -151,7 +151,7 @@ type Set struct {
 	hiddenLayers map[string]bool
 	cache        map[cacheKey]Resolved
 	count        int
-	Truncated    bool // more styles than maxStyles; the rest were left out
+	Truncated    bool // more styles than MaxStyles; the rest were left out
 	Damaged      bool // a stream's styles could not be read to their end
 	Scripts      int  // non-empty office:scripts or office:event-listeners met
 }
@@ -162,9 +162,9 @@ type cacheKey struct {
 	name   string
 }
 
-// maxStyles bounds the styles kept from one document. A real document has
+// MaxStyles bounds the styles kept from one document. A real document has
 // hundreds; each costs memory.
-const maxStyles = 1 << 16
+const MaxStyles = 1 << 16
 
 // maxChain bounds the length of an inheritance chain.
 const maxChain = 32
@@ -257,7 +257,7 @@ func (set *Set) Read(s *xmlscan.Scanner, sc Scope) error {
 				if v, ok := s.Attr(ns.Style, "list-style-name"); ok {
 					st.listStyle, st.hasList = string(v), true
 				}
-				if set.count >= maxStyles {
+				if set.count >= MaxStyles {
 					set.Truncated = true
 					s.Skip()
 					continue
@@ -299,7 +299,7 @@ func (set *Set) Read(s *xmlscan.Scanner, sc Scope) error {
 				s.Skip() // the content of a master page is read by the body reader
 			}
 		case ns.Draw:
-			if local == "layer" && len(set.hiddenLayers) < maxStyles {
+			if local == "layer" && len(set.hiddenLayers) < MaxStyles {
 				if v, _ := s.Attr(ns.Draw, "display"); string(v) == "none" {
 					set.hiddenLayers[string(attr(s, ns.Draw, "name"))] = true
 				}
@@ -307,7 +307,7 @@ func (set *Set) Read(s *xmlscan.Scanner, sc Scope) error {
 		case ns.Text:
 			switch local {
 			case "list-style", "outline-style":
-				if set.count >= maxStyles {
+				if set.count >= MaxStyles {
 					set.Truncated = true
 					s.Skip()
 					continue
@@ -556,7 +556,7 @@ func (set *Set) resolve(sc Scope, family, name string, r Resolved) Resolved {
 	for i := len(chain) - 1; i >= 0; i-- {
 		apply(&r, chain[i])
 	}
-	if len(set.cache) < maxStyles {
+	if len(set.cache) < MaxStyles {
 		set.cache[k] = r
 	}
 	return r

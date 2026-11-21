@@ -1,6 +1,7 @@
 package odt
 
 import (
+	"fmt"
 	"slices"
 
 	"github.com/AOShei/go-fast-core"
@@ -216,7 +217,8 @@ func SetMaxRepeatedForTest(n int64) (restore func()) {
 //
 // The master's text is read, and charged to the text budget, once; each
 // further copy is charged again, and the copies over the presentation
-// are bounded by maxRepeated: a slide past that says so.
+// are bounded by maxRepeated: the first slide past that says so, with
+// the number of slides left without their copy.
 func (r *reader) addMasters(parts []gofastcore.Part, uses []slideUse) {
 	want := map[string]int{}
 	for i, u := range uses {
@@ -241,6 +243,7 @@ func (r *reader) addMasters(parts []gofastcore.Part, uses []slideUse) {
 	}
 	left := maxRepeated
 	full := false
+	first, skipped := -1, 0 // slides whose copy is left out
 	for i, u := range uses {
 		blocks := masters[u.master]
 		if len(blocks) == 0 || i >= len(parts) {
@@ -253,7 +256,10 @@ func (r *reader) addMasters(parts []gofastcore.Part, uses []slideUse) {
 		case want[u.master] == i:
 			// The first copy was charged when the master was read.
 		case left < n:
-			p.Warn(gofastcore.SeverityError, gofastcore.WarnLimitExceeded, "the text of the slide's master page is left out: the slides of the presentation repeat more of it than is kept")
+			if first < 0 {
+				first = i
+			}
+			skipped++
 			continue
 		case !r.budget.Take(costs[u.master]):
 			p.Warn(gofastcore.SeverityError, gofastcore.WarnLimitExceeded, textCut)
@@ -265,6 +271,11 @@ func (r *reader) addMasters(parts []gofastcore.Part, uses []slideUse) {
 		p.Blocks = slices.Insert(p.Blocks, min(u.notesAt, len(p.Blocks)), repeated(blocks)...)
 		p.Warnings = slices.DeleteFunc(p.Warnings, func(w gofastcore.Warning) bool { return w.Code == gofastcore.WarnPartNoText })
 		p.Finish()
+	}
+	if skipped > 0 {
+		// Said once, on the first slide it concerns.
+		parts[first].Warn(gofastcore.SeverityError, gofastcore.WarnLimitExceeded, fmt.Sprintf(
+			"the text of the master page is left out on %d slides, this one the first: the slides of the presentation repeat more of it than is kept (%d blocks)", skipped, maxRepeated))
 	}
 }
 

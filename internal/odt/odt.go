@@ -90,6 +90,8 @@ type reader struct {
 	maxCells int64
 	cells    int64
 
+	hits []capHit // what fixed bounds left out of the part being read
+
 	deletions map[string]*deletion
 	usedDel   map[string]bool
 	endnotes  []gofastcore.Block
@@ -174,6 +176,7 @@ func Read(ctx context.Context, pkg *odpkg.Package, set *style.Set, opts *gofastc
 			Message: fmt.Sprintf("%d control characters removed from the text", r.removed)})
 	}
 	r.unplacedControls()
+	r.sayLost(nil, &res.Warnings)
 	res.Children = r.children
 	if len(r.userVars) > 0 {
 		// What the file keeps and shows nowhere, with no reason: it is
@@ -253,6 +256,7 @@ func (r *reader) finish(part *gofastcore.Part, what string) {
 		part.Warn(gofastcore.SeverityInfo, gofastcore.WarnHeadingLevelClamped, fmt.Sprintf("%d headings deeper than level 6", r.clamped))
 		r.clamped = 0
 	}
+	r.sayLost(part, nil)
 	if len(part.Blocks) == 0 && len(part.Warnings) == 0 {
 		part.Warn(gofastcore.SeverityWarning, gofastcore.WarnPartNoText, "the "+what+" has no text and no images")
 	}

@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"io"
+	"slices"
 	"strings"
 
 	"github.com/AOShei/go-fast-core"
@@ -142,7 +143,11 @@ func (r *reader) inlineObject(c ctxt, name string, dst *[]gofastcore.Block) bool
 // child hands an embedded file to Options.Child, with the decompression
 // budget settled before and after, and keeps the document it gives.
 func (r *reader) child(name, mime string, read func() ([]byte, error)) bool {
-	if r.stopped || len(r.children) >= maxChildren {
+	if r.stopped {
+		return false
+	}
+	if len(r.children) >= maxChildren {
+		r.lost(capChildren, 1)
 		return false
 	}
 	data, err := read()
@@ -212,6 +217,7 @@ func (r *reader) formula(sub *xmlscan.Scanner, c ctxt, dst *[]gofastcore.Block) 
 	text := strings.TrimSpace(m.elem("math"))
 	if len(text) > maxFormula {
 		text = text[:maxFormula]
+		m.cut = true
 	}
 	text, _ = clean.String([]byte(text), clean.Prose)
 	star, _ := clean.String(m.starmath, clean.Prose)
@@ -224,6 +230,9 @@ func (r *reader) formula(sub *xmlscan.Scanner, c ctxt, dst *[]gofastcore.Block) 
 	}
 	if text == "" {
 		return
+	}
+	if m.cut {
+		r.lost(capFormula, 1)
 	}
 	if star != "" && !r.budget.Take(len(star)) {
 		r.stop(textCut)
@@ -238,6 +247,7 @@ type mathReader struct {
 	s        *xmlscan.Scanner
 	starmath []byte
 	size     int
+	cut      bool // text past maxFormula was left out
 }
 
 // elem renders the element whose Start is current and reads to its end.
@@ -256,6 +266,8 @@ func (m *mathReader) elem(local string) string {
 			if m.size < maxFormula {
 				text = append(text, bytes.TrimSpace(s.Text())...)
 				m.size += len(s.Text())
+			} else if len(bytes.TrimSpace(s.Text())) > 0 {
+				m.cut = true
 			}
 		case xmlscan.Start:
 			child := string(s.Local())
@@ -265,9 +277,15 @@ func (m *mathReader) elem(local string) string {
 			}
 			switch child {
 			case "annotation":
+				// The attribute is read before the text: reading on reuses
+				// the scanner's buffer.
 				enc, _ := s.Attr(xmlscan.NoSpace, "encoding")
+				star := strings.HasPrefix(string(enc), "StarMath")
 				v := s.AppendText(nil)
-				if strings.HasPrefix(string(enc), "StarMath") && len(m.starmath) == 0 && len(v) <= maxFormula {
+				if star && len(m.starmath) == 0 {
+					if len(v) > maxFormula {
+						v, m.cut = v[:maxFormula], true
+					}
 					m.starmath = v
 				}
 			case "annotation-xml":
@@ -367,9 +385,9 @@ func (r *reader) chart(sub *xmlscan.Scanner, c ctxt, name string, dst *[]gofastc
 			t, _ := clean.String(sub.AppendText(nil), clean.Prose)
 			switch {
 			case sub.Depth() > depth+1 && dim == "x" && axisX == "":
-				axisX = clean.Label(t)
+				axisX = r.label(t)
 			case sub.Depth() > depth+1 && dim == "y" && axisY == "":
-				axisY = clean.Label(t)
+				axisY = r.label(t)
 			case title == "":
 				title = t
 			}
@@ -377,15 +395,20 @@ func (r *reader) chart(sub *xmlscan.Scanner, c ctxt, name string, dst *[]gofastc
 			sub.Skip()
 		case sub.Space() == ns.Table && string(sub.Local()) == "table-header-rows":
 			inHeader = true
-		case sub.Space() == ns.Table && string(sub.Local()) == "table-row" && len(rows) < maxChartRows:
-			n := repeat(attrOf(sub, ns.Table, "number-rows-repeated"))
-			row := chartRow(sub)
-			for i := 0; i < n && len(rows) < maxChartRows; i++ {
+		case sub.Space() == ns.Table && string(sub.Local()) == "table-row":
+			n := asked(attrOf(sub, ns.Table, "number-rows-repeated"))
+			row, lostCols := r.chartRow(sub)
+			kept := min(n, int64(maxChartRows-len(rows)))
+			for range kept {
 				rows = append(rows, row)
 				if inHeader {
 					header++
 				}
 			}
+			if slices.ContainsFunc(row, func(v string) bool { return v != "" }) {
+				r.lost(capChartRows, n-kept)
+			}
+			r.lost(capChartCols, satMul(lostCols, kept))
 		}
 	}
 	if title != "" {
@@ -436,25 +459,32 @@ func (r *reader) chart(sub *xmlscan.Scanner, c ctxt, name string, dst *[]gofastc
 	*dst = append(*dst, b)
 }
 
-// chartRow reads the cells of a row of a chart's table.
-func chartRow(sub *xmlscan.Scanner) []string {
-	var row []string
+// chartRow reads the cells of a row of a chart's table, and counts the
+// cells with text past the last column kept.
+func (r *reader) chartRow(sub *xmlscan.Scanner) (row []string, lost int64) {
 	depth := sub.Depth()
 	for {
 		k := sub.Next()
 		if k == xmlscan.EOF || k == xmlscan.End && sub.Depth() < depth {
-			return row
+			return row, lost
 		}
 		if k != xmlscan.Start || sub.Space() != ns.Table || (string(sub.Local()) != "table-cell" && string(sub.Local()) != "covered-table-cell") {
 			continue
 		}
-		n := repeat(attrOf(sub, ns.Table, "number-columns-repeated"))
+		n := asked(attrOf(sub, ns.Table, "number-columns-repeated"))
 		v, _ := clean.String(sub.AppendText(nil), clean.Prose)
 		if len(v) > maxFormula {
-			v = clean.Label(v)
+			// Cut where the bound is; a character split there becomes
+			// U+FFFD.
+			v, _ = clean.String([]byte(v[:maxFormula]), clean.Prose)
+			r.lost(capChartCell, 1)
 		}
-		for i := 0; i < n && len(row) < maxChartCols; i++ {
+		kept := min(n, int64(maxChartCols-len(row)))
+		for range kept {
 			row = append(row, v)
+		}
+		if v != "" {
+			lost = satAdd(lost, n-kept)
 		}
 	}
 }
@@ -476,6 +506,10 @@ type control struct {
 
 // maxControls bounds the controls remembered.
 const maxControls = 1 << 14
+
+// maxOptions bounds the values a list control or a drop-down field
+// offers.
+const maxOptions = 1 << 12
 
 // readForms reads office:forms: the controls, by their id, for
 // draw:control elements to place.
@@ -500,7 +534,11 @@ func (r *reader) readForms() {
 		case "form", "properties", "property", "list-property", "list-value", "connection-resource":
 			continue
 		case "option", "item":
-			if cur != nil && len(cur.options) < 1<<12 {
+			if cur != nil && len(cur.options) >= maxOptions {
+				if r.attr(ns.Form, "label") != "" || r.attr(ns.Form, "value") != "" {
+					r.lost(capOptions, 1)
+				}
+			} else if cur != nil {
 				label := r.plain([]byte(r.attr(ns.Form, "label")))
 				if label == "" {
 					label = r.plain([]byte(r.attr(ns.Form, "value")))
@@ -540,7 +578,11 @@ func (r *reader) readForms() {
 		case "password", "hidden":
 			c.hidden = true
 		}
-		if id == "" || len(r.controls) >= maxControls {
+		if id == "" {
+			continue
+		}
+		if _, dup := r.controls[id]; !dup && len(r.controls) >= maxControls {
+			r.lost(capControls, 1)
 			continue
 		}
 		if _, dup := r.controls[id]; !dup {

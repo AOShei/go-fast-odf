@@ -3,6 +3,48 @@
 All notable changes to go-fast-odf are recorded here, in the style of
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## v0.1.1 (not yet tagged)
+
+- The OpenOffice.org 1 formats other than sxw (sxc, sxi, sxd, sxm, sxg
+  and the templates stw, stc, sti, std) give `ErrUnsupported`; they were
+  reported as an empty odt. A package whose media type is not
+  OpenDocument's (or is missing) and whose `content.xml` has no
+  OpenDocument body gives `ErrUnsupported`; it was reported as an empty
+  odt.
+- Fixed bounds that left content out without saying so now raise
+  `limit.exceeded` (severity error), once per bound on the part
+  concerned, with how much was left out: table cells past column 16,384
+  of a text document's table and repetitions of its rows past 2^20;
+  cells past column 65,536 and rows past row 2^24 of a sheet; formula
+  text and StarMath source past 64 KiB; embedded documents past 4,096
+  (neither extracted nor listed); a chart's table past 16,384 rows or
+  1,024 columns, or a chart cell past 64 KiB; form controls past 16,384;
+  a list box's options and a drop-down field's values past 4,096;
+  content validations past 16,384 (on the document); note citations,
+  list and heading numbers and axis titles past 512 bytes; link
+  addresses past 8 KiB; list identifiers past 16,384.
+- A sheet's rows are counted up to the sheet's bound (2^24), not 2^20:
+  a row repeated more than 2^20 times no longer moves the rows after it
+  to wrong addresses.
+- A cell's stored value given as its text, and its formula under
+  `Options.Cells`, are kept up to 64 KiB (with `limit.exceeded` past it);
+  they were cut at 512 bytes.
+- A StarMath source over 64 KiB is kept up to 64 KiB; it was dropped,
+  and with it the formula block when the MathML gave no text. A StarMath
+  source longer than the scanner's buffer was not recognised as one.
+- A chart cell over 64 KiB is cut there; it was cut to 512 bytes.
+- A picture held in a flat file, or the data of one in a package, that
+  `MaxDecodedBytes` cannot hold raises `limit.exceeded`; the picture's
+  block was given empty without a warning.
+- More styles than are read (65,536) and more manifest entries than are
+  read (131,072) are `limit.exceeded` on the document; they were
+  `odf.part_damaged`.
+- Master-page text left out of slides past the bound on repeated blocks
+  is said once, on the first slide concerned, with the number of slides;
+  it was one warning per slide.
+- Argon2id key derivation looks at the context every 1,024 blocks, not
+  once per segment, so that cancellation is prompt.
+
 ## v0.1.0 (2026-11-21)
 
 The first release. Built on go-fast-core v0.1.0, schema 0.2.

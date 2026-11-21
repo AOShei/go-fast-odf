@@ -210,9 +210,13 @@ func (r *reader) list(c ctxt, dst *[]gofastcore.Block) {
 		}
 		if id := r.attr(xmlscan.SpaceXML, "id"); id != "" && len(r.lists.byID) < maxListIDs {
 			r.lists.byID[id] = l.count
+		} else if id != "" {
+			r.lost(capListIDs, 1)
 		}
 		if len(r.lists.byStyle) < maxListIDs {
 			r.lists.byStyle[name] = l.count
+		} else {
+			r.lost(capListIDs, 1)
 		}
 		r.lists.last = l.count
 	}
@@ -264,7 +268,7 @@ func (r *reader) item(c ctxt, l *listCtx, it *itemCtx, dst *[]gofastcore.Block) 
 		switch {
 		case space == ns.Text && local == "number":
 			v, _ := clean.String(s.AppendText(nil), clean.Prose)
-			given = clean.Label(v)
+			given = r.label(v)
 		case space == ns.Text && (local == "p" || local == "h"):
 			var use *itemCtx
 			if first {
@@ -303,6 +307,8 @@ func (r *reader) numberedParagraph(c ctxt, dst *[]gofastcore.Block) {
 		count = &counters{}
 		if id != "" && len(r.lists.byID) < maxListIDs {
 			r.lists.byID[id] = count
+		} else if id != "" {
+			r.lost(capListIDs, 1)
 		}
 	}
 	l := &listCtx{style: r.set.List(r.sc, name), name: name, depth: level, count: count}
@@ -323,7 +329,7 @@ func (r *reader) numberedParagraph(c ctxt, dst *[]gofastcore.Block) {
 		switch {
 		case s.Space() == ns.Text && string(s.Local()) == "number":
 			v, _ := clean.String(s.AppendText(nil), clean.Prose)
-			given = clean.Label(v)
+			given = r.label(v)
 		case s.Space() == ns.Text && (string(s.Local()) == "p" || string(s.Local()) == "h"):
 			if given != "" {
 				it.marker()

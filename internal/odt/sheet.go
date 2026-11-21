@@ -10,6 +10,7 @@ import (
 	"github.com/AOShei/go-fast-core"
 	"github.com/AOShei/go-fast-odf/internal/clean"
 	"github.com/AOShei/go-fast-odf/internal/ns"
+	"github.com/AOShei/go-fast-odf/internal/style"
 	"github.com/AOShei/go-fast-odf/internal/xmlscan"
 )
 
@@ -241,6 +242,9 @@ func cellAddr(a string) (sheet string, row, col int, ok bool) {
 	return sheet, row - 1, col - 1, true
 }
 
+// maxValidations bounds the content validations kept.
+const maxValidations = 1 << 14
+
 // readValidations reads table:content-validations: the lists of values
 // cells offer.
 func (r *reader) readValidations() {
@@ -255,8 +259,12 @@ func (r *reader) readValidations() {
 			continue
 		}
 		name := r.attr(ns.Table, "name")
-		if text := listOf(r.attr(ns.Table, "condition")); text != "" && len(r.validations) < 1<<14 {
-			r.validations[name] = validation{text: text}
+		if text := listOf(r.attr(ns.Table, "condition")); text != "" {
+			if len(r.validations) < maxValidations {
+				r.validations[name] = validation{text: text}
+			} else if _, ok := r.validations[name]; !ok {
+				r.lost(capValidations, 1)
+			}
 		}
 		s.Skip()
 	}
@@ -468,13 +476,18 @@ func (sh *sheetIn) colStyle(col int) string {
 
 func (r *reader) sheetRow(sh *sheetIn, row *int) {
 	s := &r.s
-	n := repeat(r.attr(ns.Table, "number-rows-repeated"))
+	// Rows are counted up to the sheet's bound, not the bound on other
+	// repetitions, so that every row after keeps its address.
+	want := asked(r.attr(ns.Table, "number-rows-repeated"))
+	n := int(min(want, maxSheetRows))
 	hidden := visibility(r.attr(ns.Table, "visibility"))
 	rowStyle := r.attr(ns.Table, "default-cell-style-name")
 	top := *row
 	*row = min(top+n, maxSheetRows)
 	if top >= maxSheetRows {
-		s.Skip()
+		if r.skipRow() {
+			r.lost(capSheetRows, want)
+		}
 		return
 	}
 	if hidden != 0 {
@@ -483,6 +496,7 @@ func (r *reader) sheetRow(sh *sheetIn, row *int) {
 	var cells []sheetCell
 	var notes []placed
 	var noValue int64
+	var lostCols int64 // cells with something past the last column
 	col := 0
 	depth := s.Depth()
 	for {
@@ -498,7 +512,18 @@ func (r *reader) sheetRow(sh *sheetIn, row *int) {
 			continue
 		}
 		covered := string(s.Local()) == "covered-table-cell"
-		reps := repeat(r.attr(ns.Table, "number-columns-repeated"))
+		wantCols := asked(r.attr(ns.Table, "number-columns-repeated"))
+		if col >= maxSheetCols {
+			// Past the last column read: the rest of the row is passed
+			// over, and what it held counted.
+			if !covered && r.skipCell() {
+				lostCols = satAdd(lostCols, wantCols)
+			} else if covered {
+				s.Skip()
+			}
+			continue
+		}
+		reps := int(min(wantCols, maxRepeat))
 		c := sheetCell{rows: 1, cols: 1}
 		if !covered {
 			c.rows = int32(min(repeat(r.attr(ns.Table, "number-rows-spanned")), maxSheetRows))
@@ -546,7 +571,10 @@ func (r *reader) sheetRow(sh *sheetIn, row *int) {
 		}
 		var more cellMore
 		if r.opts.Cells {
-			more.formula = clean.Label(formula)
+			var cut bool
+			if more.formula, cut = clean.Bounded(formula, maxValue); cut {
+				r.lost(capCellFormula, 1)
+			}
 			more.typ, more.value = cellType(vt), value
 			if more.typ == gofastcore.CellText || more.value == text {
 				more.typ, more.value = 0, ""
@@ -570,16 +598,18 @@ func (r *reader) sheetRow(sh *sheetIn, row *int) {
 		if covered || !has {
 			col = min(col+reps, maxSheetCols)
 		} else {
+			lostCols = satAdd(lostCols, wantCols-int64(min(reps, maxSheetCols-col)))
 			for k := 0; k < reps && col < maxSheetCols; k++ {
 				c.col = int32(col)
 				cells = append(cells, c)
 				col++
 			}
 		}
-		if col >= maxSheetCols {
-			break // the rest of the row is passed over by the caller
-		}
 	}
+	if len(cells) > 0 {
+		r.lost(capSheetRows, want-int64(*row-top))
+	}
+	r.lost(capSheetCols, satMul(lostCols, int64(*row-top)))
 	// The row's cells, once for every row it stands for. The cells a
 	// sheet holds before its tables are made are bounded by what they
 	// take in memory (heldCell bytes each) against the text the document
@@ -633,7 +663,42 @@ func cellValue(r *reader, vt string) string {
 		v, _ = r.s.Attr(ns.Office, "value")
 	}
 	out, _ := clean.String(v, clean.Prose)
-	return clean.Label(out)
+	out, cut := clean.Bounded(out, maxValue)
+	if cut {
+		r.lost(capCellValue, 1)
+	}
+	return out
+}
+
+// skipRow passes over a row, whose Start is current, past the last row
+// read, and reports whether any of its cells held anything.
+func (r *reader) skipRow() bool {
+	s := &r.s
+	has := false
+	depth := s.Depth()
+	for {
+		k := s.Next()
+		if k == xmlscan.EOF || k == xmlscan.End && s.Depth() < depth {
+			return has
+		}
+		if k != xmlscan.Start {
+			continue
+		}
+		if s.Space() == ns.Table && string(s.Local()) == "table-cell" {
+			has = r.skipCell() || has
+			continue
+		}
+		s.Skip()
+	}
+}
+
+// skipCell passes over a cell, whose Start is current, past the last
+// column or row read, and reports whether it held anything: a value, a
+// formula or content.
+func (r *reader) skipCell() bool {
+	_, typed := r.s.Attr(ns.Office, "value-type")
+	_, formula := r.s.Attr(ns.Table, "formula")
+	return style.HasChildren(&r.s) || typed || formula
 }
 
 func cellType(vt string) gofastcore.CellType {

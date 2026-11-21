@@ -164,6 +164,22 @@ const maxAddress = 8 << 10
 // address may be linked to any number of times.
 func Address(s string) string { return bounded(s, maxAddress) }
 
+// LabelCut is Label that also reports whether the bound left out
+// anything but white space.
+func LabelCut(s string) (string, bool) { return Bounded(s, maxLabel) }
+
+// AddressCut is Address that also reports whether the bound left out
+// anything but white space.
+func AddressCut(s string) (string, bool) { return Bounded(s, maxAddress) }
+
+// Bounded is Label with a bound of the caller's, for values that are
+// content and so run longer than names. It reports whether the bound left
+// out anything but white space.
+func Bounded(s string, limit int) (string, bool) {
+	cut := len(s) > limit && strings.TrimSpace(s[limit:]) != ""
+	return bounded(s, limit), cut
+}
+
 func bounded(s string, limit int) string {
 	plain := len(s) <= limit
 	for i := 0; plain && i < len(s); i++ {
