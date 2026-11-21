@@ -5,7 +5,7 @@ All notable changes to go-fast-odf are recorded here, in the style of
 
 ## v0.1.0 (not yet tagged)
 
-The first release. Built on go-fast-core schema 0.2, pinned at `4499357`.
+The first release. Built on go-fast-core v0.1.0, schema 0.2.
 
 - Reads OpenDocument text documents (odt, ott, odm, otm, oth),
   spreadsheets (ods, ots) and presentations (odp, otp), and the flat XML
@@ -32,6 +32,12 @@ The first release. Built on go-fast-core schema 0.2, pinned at `4499357`.
 ## Before v0.1.0
 
 Development history, newest first. Nothing was released before v0.1.0.
+
+### Core v0.1.0
+
+- go-fast-core pinned at its v0.1.0 tag. Nothing changes here: since
+  `4499357` core changed documentation, and `TextBudget.Take` now takes a
+  negative amount as 0, which this library never passes.
 
 ### Core 4499357: closed value sets, shared render flags
 
