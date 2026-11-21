@@ -370,11 +370,17 @@ func (r *reader) slideMasters(part *gofastcore.Part, want map[string]int) (map[s
 			}
 			// What bounds leave out of a master is said on the slides
 			// that show it.
+			// What is lost once for the document (an embedded document,
+			// a picture) stays with the document.
 			outer := r.hits
 			r.hits = nil
 			out[name] = r.masterItems(h)
-			if len(r.hits) > 0 {
-				lost[name] = r.hits
+			for _, hit := range r.hits {
+				if caps[hit.id].once {
+					outer = mergeHits(outer, []capHit{hit})
+				} else {
+					lost[name] = append(lost[name], hit)
+				}
 			}
 			r.hits = outer
 		}

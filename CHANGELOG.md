@@ -27,7 +27,9 @@ All notable changes to go-fast-odf are recorded here, in the style of
   addresses past 8 KiB; lists that continue one whose identifier or
   style name was not remembered (past 16,384 of each). What a bound
   leaves out of a master page's own content is said on each slide that
-  shows it, merged with the slide's own warning for that bound.
+  shows it, merged with the slide's own warning for that bound; an
+  embedded document or picture it leaves out is said once, on the
+  document. Repeated cells are counted for every copy given.
 - A sheet's rows are counted up to the sheet's bound (2^24), not 2^20:
   a row repeated more than 2^20 times no longer moves the rows after it
   to wrong addresses.

@@ -161,6 +161,13 @@ func TestSheetRowsCap(t *testing.T) {
 		t.Fatal(err)
 	}
 	saysOnce(t, doc, 0, "rows past row 16777216", "(3 rows)")
+	// A row over the bound whose only content is past the last column.
+	tables = `<table:table table:name="S"><table:table-row>` + cell("first") + `</table:table-row>` +
+		`<table:table-row table:number-rows-repeated="16777213"><table:table-cell/></table:table-row>` +
+		`<table:table-row table:number-rows-repeated="5"><table:table-cell table:number-columns-repeated="65536"/>` + cell("x") + `</table:table-row></table:table>`
+	doc = extract(t, sheetDoc(t, tables), nil)
+	saysOnce(t, doc, 0, "rows past row 16777216", "(3 rows)")
+	saysOnce(t, doc, 0, "past column 65536", "(2 cells)")
 }
 
 func TestSheetColumnsCap(t *testing.T) {
@@ -225,6 +232,12 @@ func TestCellValueCap(t *testing.T) {
 	if got := doc.Parts[0].Blocks[0].Table.Rows[0][0]; len(got) != 65536 {
 		t.Errorf("value of %d bytes", len(got))
 	}
+	// Each copy given of a repeated cell is counted.
+	row = `<table:table-row table:number-rows-repeated="2"><table:table-cell office:value-type="float" table:number-columns-repeated="3" office:value="` + huge + `"/>` +
+		cell("3", `table:formula="of:=`+huge+`" office:value-type="float" office:value="3"`) + `</table:table-row>`
+	doc = extract(t, sheetDoc(t, `<table:table table:name="S">`+row+`</table:table>`), &gofastcore.Options{Cells: true})
+	saysOnce(t, doc, 0, "cell values longer than 65536 bytes", "(6 values)")
+	saysOnce(t, doc, 0, "cell formulas longer than 65536 bytes", "(2 formulas)")
 }
 
 func TestValidationsCap(t *testing.T) {
@@ -333,7 +346,8 @@ func TestListIDsCap(t *testing.T) {
 		fmt.Fprintf(&sb, `<text:numbered-paragraph text:list-id="L%d"><text:p>p</text:p></text:numbered-paragraph>`, i)
 	}
 	noLimits(t, extract(t, textDoc(t, "", sb.String()), nil))
-	sb.WriteString(`<text:numbered-paragraph text:list-id="L16384"><text:p>again</text:p></text:numbered-paragraph>`)
+	// Met again many times, the list is counted once.
+	sb.WriteString(strings.Repeat(`<text:numbered-paragraph text:list-id="L16384"><text:p>again</text:p></text:numbered-paragraph>`, 50))
 	saysOnce(t, extract(t, textDoc(t, "", sb.String()), nil), 0, what, "(1 lists)")
 
 	// Style names: one remembered is updated when the map is full; a
@@ -485,5 +499,30 @@ func TestCapWarningsOnTheirPart(t *testing.T) {
 	}
 	if len(limitsOn(doc, -1)) != 0 {
 		t.Errorf("document %q", limitsOn(doc, -1))
+	}
+}
+
+// What is lost once for the document in a master page (an embedded
+// document past the bound) is said on the document, not on every slide
+// that shows the master.
+func TestMasterLossOnceForTheDocument(t *testing.T) {
+	var sb strings.Builder
+	var members []member
+	sb.WriteString(`<office:presentation><draw:page draw:master-page-name="M">`)
+	for i := range 4096 {
+		name := fmt.Sprintf("Obj%d", i)
+		fmt.Fprintf(&sb, `<draw:frame><draw:object-ole xlink:href="./%s"/></draw:frame>`, name)
+		members = append(members, member{name: name, data: "x"})
+	}
+	sb.WriteString(`</draw:page>` + strings.Repeat(`<draw:page draw:master-page-name="M"/>`, 5) + `</office:presentation>`)
+	master := `<style:master-page style:name="M"><draw:frame svg:y="1cm"><draw:text-box><text:p>m</text:p></draw:text-box></draw:frame>` +
+		`<draw:frame svg:y="2cm"><draw:object-ole xlink:href="./Extra"/></draw:frame></style:master-page>`
+	members = append(members, member{name: "Extra", data: "x"}, member{name: "styles.xml", data: stylesXML("", "", master)})
+	doc := extract(t, bodyDoc(t, slideMIME, "", sb.String(), members...), nil)
+	saysOnce(t, doc, -1, "embedded documents past the first 4096", "(1 documents)")
+	for i := range doc.Parts {
+		if l := limitsOn(doc, i); len(l) != 0 {
+			t.Errorf("slide %d: %q", i+1, l)
+		}
 	}
 }

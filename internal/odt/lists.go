@@ -65,7 +65,7 @@ const maxListIDs = 1 << 14
 // was is not taken for one.
 type listMap struct {
 	m         map[string]*counters
-	forgotten map[uint64]bool
+	forgotten map[uint64]bool // hash -> missed and counted already
 }
 
 func (l *listMap) init() {
@@ -75,7 +75,8 @@ func (l *listMap) init() {
 
 // get returns the counters key stands for, or nil; missed reports that
 // key was not kept because the map was full (or, past what is kept of
-// the names not kept, may not have been).
+// the names not kept, may not have been). A name not kept is missed
+// once: what continues it after is the same list, counted already.
 func (l *listMap) get(key string) (c *counters, missed bool) {
 	if c := l.m[key]; c != nil {
 		return c, false
@@ -83,7 +84,16 @@ func (l *listMap) get(key string) (c *counters, missed bool) {
 	if len(l.m) < maxListIDs {
 		return nil, false
 	}
-	return nil, l.forgotten[hashKey(key)] || len(l.forgotten) >= maxListIDs
+	h := hashKey(key)
+	said, ok := l.forgotten[h]
+	switch {
+	case ok && !said:
+		l.forgotten[h] = true
+		return nil, true
+	case ok:
+		return nil, false
+	}
+	return nil, len(l.forgotten) >= maxListIDs
 }
 
 // set records the counters key stands for. A key already there is
@@ -93,8 +103,10 @@ func (l *listMap) set(key string, c *counters) {
 		l.m[key] = c
 		return
 	}
-	if len(l.forgotten) < maxListIDs {
-		l.forgotten[hashKey(key)] = true
+	if h := hashKey(key); len(l.forgotten) < maxListIDs {
+		if _, ok := l.forgotten[h]; !ok {
+			l.forgotten[h] = false // not yet missed
+		}
 	}
 }
 

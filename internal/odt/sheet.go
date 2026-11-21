@@ -493,7 +493,8 @@ func (r *reader) sheetRow(sh *sheetIn, row *int) {
 	var cells []sheetCell
 	var notes []placed
 	var noValue int64
-	var lostCols int64 // cells with something past the last column
+	var lostCols int64               // cells with something past the last column
+	var cutValues, cutFormulas int64 // cells given whose value or formula was cut
 	col := 0
 	depth := s.Depth()
 	for {
@@ -538,9 +539,7 @@ func (r *reader) sheetRow(sh *sheetIn, row *int) {
 		vt := r.attr(ns.Office, "value-type")
 		formula := r.attr(ns.Table, "formula")
 		value, valueCut := cellValue(r, vt)
-		if valueCut && !past {
-			r.lost(capCellValue, 1)
-		}
+		formulaCut := false
 		cs := r.set.Box(r.sc, "table-cell", styleName)
 		var content []gofastcore.Block
 		r.blocks(ctxt{}, &content)
@@ -568,10 +567,7 @@ func (r *reader) sheetRow(sh *sheetIn, row *int) {
 		}
 		var more cellMore
 		if r.opts.Cells {
-			var cut bool
-			if more.formula, cut = clean.Bounded(formula, maxValue); cut && !past {
-				r.lost(capCellFormula, 1)
-			}
+			more.formula, formulaCut = clean.Bounded(formula, maxValue)
 			more.typ, more.value = cellType(vt), value
 			if more.typ == gofastcore.CellText || more.value == text {
 				more.typ, more.value = 0, ""
@@ -605,8 +601,16 @@ func (r *reader) sheetRow(sh *sheetIn, row *int) {
 		if covered || !has {
 			col = min(col+reps, maxSheetCols)
 		} else {
+			kept := int64(min(reps, maxSheetCols-col))
 			if holds(&c, nil) {
-				lostCols = satAdd(lostCols, wantCols-int64(min(reps, maxSheetCols-col)))
+				lostCols = satAdd(lostCols, wantCols-kept)
+			}
+			// Cuts are counted for every copy of the cell given.
+			if valueCut {
+				cutValues += kept
+			}
+			if formulaCut {
+				cutFormulas += kept
 			}
 			for k := 0; k < reps && col < maxSheetCols; k++ {
 				c.col = int32(col)
@@ -648,10 +652,12 @@ func (r *reader) sheetRow(sh *sheetIn, row *int) {
 		rr = *row // rows with nothing kept: none is stopped before
 	}
 	r.lost(capSheetCols, satMul(lostCols, int64(rr-top)))
+	r.lost(capCellValue, satMul(cutValues, int64(rr-top)))
+	r.lost(capCellFormula, satMul(cutFormulas, int64(rr-top)))
 	if rr < *row {
 		return
 	}
-	if len(cells) > 0 {
+	if len(cells) > 0 || lostCols > 0 {
 		r.lost(capSheetRows, want-int64(*row-top))
 	}
 	sh.notes = append(sh.notes, notes...)

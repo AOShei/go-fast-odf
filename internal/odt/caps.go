@@ -43,6 +43,11 @@ const maxValue = 64 << 10
 type capInfo struct {
 	what, unit string
 	doc        bool // said on the document: what it lost belongs to no part
+	// once: what it lost is lost once for the document, though the
+	// content stands on many parts (an embedded document not listed, a
+	// picture not read in a master page): in a master it is not said on
+	// every slide that shows it.
+	once bool
 }
 
 var caps = [...]capInfo{
@@ -53,7 +58,7 @@ var caps = [...]capInfo{
 	capCellValue:   {what: "cell values longer than " + strconv.Itoa(maxValue) + " bytes were cut there", unit: "values"},
 	capCellFormula: {what: "cell formulas longer than " + strconv.Itoa(maxValue) + " bytes were cut there", unit: "formulas"},
 	capFormula:     {what: "formula text longer than " + strconv.Itoa(maxFormula) + " bytes was cut there", unit: "formulas"},
-	capChildren:    {what: "embedded documents past the first " + strconv.Itoa(maxChildren) + " were neither extracted nor listed", unit: "documents"},
+	capChildren:    {what: "embedded documents past the first " + strconv.Itoa(maxChildren) + " were neither extracted nor listed", unit: "documents", once: true},
 	capChartRows:   {what: "rows of a chart's table past " + strconv.Itoa(maxChartRows) + " were not read", unit: "rows"},
 	capChartCols:   {what: "cells of a chart's table past column " + strconv.Itoa(maxChartCols) + " were not read", unit: "cells"},
 	capChartCell:   {what: "cells of a chart's table longer than " + strconv.Itoa(maxFormula) + " bytes were cut there", unit: "cells"},
@@ -64,7 +69,7 @@ var caps = [...]capInfo{
 	capLabel:       {what: "labels longer than 512 bytes (note citations, list and heading numbers, axis titles) were cut there", unit: "labels"},
 	capAddress:     {what: "link addresses longer than 8192 bytes were cut there", unit: "addresses"},
 	capListIDs:     {what: "lists continue one whose identifier or style name was not remembered (past the first " + strconv.Itoa(maxListIDs) + "); their numbering starts again", unit: "lists"},
-	capPictures:    {what: "the limit on decompressed bytes was reached; pictures were not read", unit: "pictures"},
+	capPictures:    {what: "the limit on decompressed bytes was reached; pictures were not read", unit: "pictures", once: true},
 }
 
 type capHit struct {
