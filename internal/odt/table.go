@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/AOShei/go-fast-core"
-	"github.com/AOShei/go-fast-odf/internal/clean"
 	"github.com/AOShei/go-fast-odf/internal/ns"
 	"github.com/AOShei/go-fast-odf/internal/xmlscan"
 )
@@ -58,7 +57,8 @@ func visibility(v string) gofastcore.Display {
 
 // table reads table:table.
 func (r *reader) table(c ctxt, dst *[]gofastcore.Block) {
-	name := clean.Name(r.attr(ns.Table, "name"))
+	var cuts int64
+	name := cutName(r.attr(ns.Table, "name"), &cuts)
 	t := &tableIn{}
 	r.tableBody(c, t, false)
 	if r.stopped {
@@ -67,6 +67,7 @@ func (r *reader) table(c ctxt, dst *[]gofastcore.Block) {
 	if b, ok := r.buildTable(t); ok {
 		if name != "" {
 			b.Attrs = map[string]string{gofastcore.AttrName: name}
+			r.lost(capLabel, cuts)
 		}
 		whole(&b, c.hidden)
 		*dst = append(*dst, b) // charged as it was built

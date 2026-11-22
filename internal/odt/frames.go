@@ -88,8 +88,8 @@ func (r *reader) frame(c ctxt, dst *[]gofastcore.Block) {
 	var title, desc string
 	var img *gofastcore.Block
 	imgAt := -1
-	frameName := clean.Name(r.attr(ns.Draw, "name"))
-	replaced := false // an object of the frame became blocks of its own
+	frameName := r.attr(ns.Draw, "name") // as the file gives it: a chart's name, cut where it is given
+	replaced := false                    // an object of the frame became blocks of its own
 	depth := s.Depth()
 	for {
 		k := s.Next()
@@ -199,7 +199,7 @@ func (r *reader) imageAt(c ctxt, alt string, dst *[]gofastcore.Block) {
 	case href != "":
 		name := odpkg.Resolve(href)
 		if name == "" || !r.pkg.Has(name) {
-			b.Image.ID = clean.Label(name)
+			b.Image.ID = r.label(name)
 			break
 		}
 		info := r.imageInfo(name)
@@ -232,8 +232,17 @@ func (r *reader) imageAt(c ctxt, alt string, dst *[]gofastcore.Block) {
 	}
 }
 
-// maxInline bounds the encoded size of a picture held in a flat file.
-const maxInline = 64 << 20
+// maxInline bounds the encoded size of a picture held in a flat file. A
+// variable so that tests can lower it.
+var maxInline = 64 << 20
+
+// SetMaxInlineForTest sets maxInline and returns a function that restores
+// it. For tests only; not safe while documents are read.
+func SetMaxInlineForTest(n int) (restore func()) {
+	old := maxInline
+	maxInline = n
+	return func() { maxInline = old }
+}
 
 // binaryData reads office:binary-data (base64) and decodes it. Its size
 // is charged to the decompression budget; a picture over maxInline, or
@@ -259,7 +268,7 @@ func (r *reader) binaryData() []byte {
 	}
 	if over || len(enc) == 0 {
 		if over {
-			r.addUnread("pictures larger than 64 MiB held in the file")
+			r.lost(capInline, 1)
 		}
 		return nil
 	}

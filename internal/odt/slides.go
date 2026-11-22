@@ -6,7 +6,6 @@ import (
 	"slices"
 
 	"github.com/AOShei/go-fast-core"
-	"github.com/AOShei/go-fast-odf/internal/clean"
 	"github.com/AOShei/go-fast-odf/internal/ns"
 	"github.com/AOShei/go-fast-odf/internal/style"
 	"github.com/AOShei/go-fast-odf/internal/xmlscan"
@@ -89,7 +88,7 @@ type slideUse struct {
 func (r *reader) slide(n int) (gofastcore.Part, slideUse) {
 	s := &r.s
 	part := gofastcore.Part{Kind: gofastcore.PartSlide, Number: n}
-	name := clean.Name(r.attr(ns.Draw, "name"))
+	name := r.attr(ns.Draw, "name") // as the file gives it: used if no title names the slide
 	use := slideUse{master: r.attr(ns.Draw, "master-page-name")}
 	page := r.set.Box(r.sc, "drawing-page", r.attr(ns.Draw, "style-name"))
 	if page.BoxHidden {
@@ -185,7 +184,7 @@ func (r *reader) slide(n int) (gofastcore.Part, slideUse) {
 		if it.title && part.Name == "" {
 			for _, b := range it.blocks {
 				if b.Kind == gofastcore.KindHeading {
-					part.Name = clean.Label(b.Text)
+					part.Name = r.label(b.Text)
 					break
 				}
 			}
@@ -195,7 +194,7 @@ func (r *reader) slide(n int) (gofastcore.Part, slideUse) {
 	use.notesAt = len(part.Blocks)
 	part.Blocks = append(part.Blocks, notes...)
 	if part.Name == "" {
-		part.Name = name
+		part.Name = r.name(name)
 	}
 	r.finish(&part, "slide")
 	return part, use

@@ -150,17 +150,18 @@ func (r *reader) child(name, mime string, read func() ([]byte, error)) bool {
 		r.lost(capChildren, 1)
 		return false
 	}
+	name = r.label(name)
 	data, err := read()
 	if err != nil {
 		d := gofastcore.New("")
-		d.Source = gofastcore.Source{Name: clean.Label(name), MIME: mime}
+		d.Source = gofastcore.Source{Name: name, MIME: mime}
 		d.Warn(gofastcore.SeverityWarning, gofastcore.WarnChildFailed, clean.Label("the embedded file could not be read: "+err.Error()))
 		r.children = append(r.children, d)
 		return false
 	}
 	budget := gofastcore.DecodeBudgetFrom(r.ctx)
 	r.pkg.Sync(budget)
-	doc := r.opts.ExtractChild(r.ctx, clean.Label(name), mime, bytes.NewReader(data), int64(len(data)))
+	doc := r.opts.ExtractChild(r.ctx, name, mime, bytes.NewReader(data), int64(len(data)))
 	r.pkg.Sync(budget)
 	r.children = append(r.children, doc)
 	return false
@@ -363,6 +364,7 @@ const (
 func (r *reader) chart(sub *xmlscan.Scanner, c ctxt, name string, dst *[]gofastcore.Block) {
 	class := strings.TrimPrefix(attrOf(sub, ns.Chart, "class"), "chart:")
 	var title, axisX, axisY, dim string
+	var cuts int64 // of the axis titles, said if the chart's table is given
 	var rows [][]string
 	header := 0
 	inHeader := false
@@ -385,9 +387,9 @@ func (r *reader) chart(sub *xmlscan.Scanner, c ctxt, name string, dst *[]gofastc
 			t, _ := clean.String(sub.AppendText(nil), clean.Prose)
 			switch {
 			case sub.Depth() > depth+1 && dim == "x" && axisX == "":
-				axisX = r.label(t)
+				axisX = cutLabel(t, &cuts)
 			case sub.Depth() > depth+1 && dim == "y" && axisY == "":
-				axisY = r.label(t)
+				axisY = cutLabel(t, &cuts)
 			case title == "":
 				title = t
 			}
@@ -426,7 +428,7 @@ func (r *reader) chart(sub *xmlscan.Scanner, c ctxt, name string, dst *[]gofastc
 	}
 	attrs := map[string]string{gofastcore.AttrRole: gofastcore.RoleChart}
 	if class != "" {
-		attrs[gofastcore.AttrChart] = clean.Label(class)
+		attrs[gofastcore.AttrChart] = cutLabel(class, &cuts)
 	}
 	if axisX != "" {
 		attrs[gofastcore.AttrAxisX] = axisX
@@ -434,9 +436,10 @@ func (r *reader) chart(sub *xmlscan.Scanner, c ctxt, name string, dst *[]gofastc
 	if axisY != "" {
 		attrs[gofastcore.AttrAxisY] = axisY
 	}
-	if name != "" {
+	if name := cutName(name, &cuts); name != "" {
 		attrs[gofastcore.AttrName] = name
 	}
+	r.lost(capLabel, cuts)
 	need := gofastcore.BlockCost + gofastcore.CellCost*width*len(rows)
 	for _, v := range attrs {
 		need += len(v)
@@ -504,6 +507,7 @@ type control struct {
 	options                  []string
 	hidden                   bool // a hidden control, or a password, whose value is never shown
 	used                     bool
+	cuts                     int64 // of kind and name, said if the control is given
 }
 
 // maxControls bounds the controls remembered.
@@ -560,8 +564,8 @@ func (r *reader) readForms() {
 		if id == "" {
 			id = r.attr(xmlscan.SpaceXML, "id")
 		}
-		c := &control{kind: clean.Label(local), name: clean.Name(r.attr(ns.Form, "name")),
-			label: r.plain([]byte(r.attr(ns.Form, "label")))}
+		c := &control{label: r.plain([]byte(r.attr(ns.Form, "label")))}
+		c.kind, c.name = cutLabel(local, &c.cuts), cutName(r.attr(ns.Form, "name"), &c.cuts)
 		c.value = r.plain([]byte(r.attr(ns.Form, "current-value")))
 		if c.value == "" {
 			c.value = r.plain([]byte(r.attr(ns.Form, "value")))
@@ -625,6 +629,9 @@ func (r *reader) placeControl(c ctxt, dst *[]gofastcore.Block) {
 // or a password field is a form value, given with no reason; the reasons
 // are those declared for where the control stands.
 func (r *reader) controlBlocks(ctl *control, hidden gofastcore.Display, dst *[]gofastcore.Block, stored bool) {
+	if ctl.text() != "" || len(ctl.options) > 0 {
+		r.lost(capLabel, ctl.cuts)
+	}
 	if text := ctl.text(); text != "" {
 		b := gofastcore.Block{Kind: gofastcore.KindParagraph, Text: text, Attrs: map[string]string{"control": ctl.kind}}
 		if ctl.name != "" {

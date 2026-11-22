@@ -7,6 +7,7 @@ import (
 
 	"github.com/AOShei/go-fast-core"
 	"github.com/AOShei/go-fast-odf/internal/clean"
+	"github.com/AOShei/go-fast-odf/internal/meta"
 )
 
 // The fixed bounds of this package that can leave content out. Each is
@@ -34,6 +35,10 @@ const (
 	capAddress
 	capListIDs
 	capPictures
+	capInline
+	capMetaValue
+	capKeywords
+	capUserDefined
 )
 
 // maxValue bounds a cell's stored value and its formula, which are
@@ -66,10 +71,21 @@ var caps = [...]capInfo{
 	capOptions:     {what: "options of a form list past the first " + strconv.Itoa(maxOptions) + " were not read", unit: "options"},
 	capDropDown:    {what: "values of a drop-down field past the first " + strconv.Itoa(maxOptions) + " were not read", unit: "values"},
 	capValidations: {what: "content validations past the first " + strconv.Itoa(maxValidations) + " were not read; the cells that use them have no choices note", unit: "validations", doc: true},
-	capLabel:       {what: "labels longer than 512 bytes (note citations, list and heading numbers, axis titles) were cut there", unit: "labels"},
-	capAddress:     {what: "link addresses longer than 8192 bytes were cut there", unit: "addresses"},
+	capLabel:       {what: "names and labels longer than 512 bytes were cut there", unit: "names or labels"},
+	capAddress:     {what: "addresses longer than 8192 bytes were cut there", unit: "addresses"},
 	capListIDs:     {what: "lists continue one whose identifier or style name was not remembered (past the first " + strconv.Itoa(maxListIDs) + "); their numbering starts again", unit: "lists"},
 	capPictures:    {what: "the limit on decompressed bytes was reached; pictures were not read", unit: "pictures", once: true},
+	capInline:      {what: "pictures held in the file in more than " + strconv.Itoa(maxInline>>20) + " MiB of base64 were not read", unit: "pictures", once: true},
+	capMetaValue:   {what: "metadata values longer than " + strconv.Itoa(meta.MaxValueBytes) + " bytes were cut there", unit: "values", doc: true},
+	capKeywords:    {what: "keywords past the first " + strconv.Itoa(meta.MaxKeywords) + " were left out", unit: "keywords", doc: true},
+	capUserDefined: {what: "user-defined properties past the first " + strconv.Itoa(meta.MaxUserDefined) + " were left out", unit: "properties", doc: true},
+}
+
+// Lost is what the bounds left out before the document's body was read
+// (its metadata and manifest): said on the document, with what the body
+// loses that belongs to no part.
+type Lost struct {
+	MetaValues, Keywords, UserDefined, Labels, Addresses int64
 }
 
 type capHit struct {
@@ -175,12 +191,40 @@ func satMul(a, b int64) int64 {
 	return a * b
 }
 
-// label is clean.Label for a label that is content (a note's citation,
-// the number of a list item or heading, an axis title): a cut is said.
+// label is clean.Label for a name or label that reaches the output (a
+// note's citation, the number of a list item or heading, an axis title,
+// an anchor, an author): a cut is said.
 func (r *reader) label(s string) string {
 	v, cut := clean.LabelCut(s)
 	if cut {
 		r.lost(capLabel, 1)
+	}
+	return v
+}
+
+// name is clean.Name, with a cut said.
+func (r *reader) name(s string) string {
+	v, cut := clean.NameCut(s)
+	if cut {
+		r.lost(capLabel, 1)
+	}
+	return v
+}
+
+// cutLabel and cutName are clean.Label and clean.Name, counting a cut in
+// n, for a label that is said only if what holds it is given.
+func cutLabel(s string, n *int64) string {
+	v, cut := clean.LabelCut(s)
+	if cut {
+		*n++
+	}
+	return v
+}
+
+func cutName(s string, n *int64) string {
+	v, cut := clean.NameCut(s)
+	if cut {
+		*n++
 	}
 	return v
 }
