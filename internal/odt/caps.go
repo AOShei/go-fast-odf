@@ -39,6 +39,7 @@ const (
 	capMetaValue
 	capKeywords
 	capUserDefined
+	capSpaces
 )
 
 // maxValue bounds a cell's stored value and its formula, which are
@@ -71,7 +72,7 @@ var caps = [...]capInfo{
 	capOptions:     {what: "options of a form list past the first " + strconv.Itoa(maxOptions) + " were not read", unit: "options"},
 	capDropDown:    {what: "values of a drop-down field past the first " + strconv.Itoa(maxOptions) + " were not read", unit: "values"},
 	capValidations: {what: "content validations past the first " + strconv.Itoa(maxValidations) + " were not read; the cells that use them have no choices note", unit: "validations", doc: true},
-	capLabel:       {what: "names and labels longer than 512 bytes were cut there", unit: "names or labels"},
+	capLabel:       {what: "names and labels longer than " + strconv.Itoa(clean.MaxLabel) + " bytes were cut there", unit: "names or labels"},
 	capAddress:     {what: "addresses longer than 8192 bytes were cut there", unit: "addresses"},
 	capListIDs:     {what: "lists continue one whose identifier or style name was not remembered (past the first " + strconv.Itoa(maxListIDs) + "); their numbering starts again", unit: "lists"},
 	capPictures:    {what: "the limit on decompressed bytes was reached; pictures were not read", unit: "pictures", once: true},
@@ -79,6 +80,7 @@ var caps = [...]capInfo{
 	capMetaValue:   {what: "metadata values longer than " + strconv.Itoa(meta.MaxValueBytes) + " bytes were cut there", unit: "values", doc: true},
 	capKeywords:    {what: "keywords past the first " + strconv.Itoa(meta.MaxKeywords) + " were left out", unit: "keywords", doc: true},
 	capUserDefined: {what: "user-defined properties past the first " + strconv.Itoa(meta.MaxUserDefined) + " were left out", unit: "properties", doc: true},
+	capSpaces:      {what: "spaces past " + strconv.Itoa(maxSpaces) + " asked for by one text:s were left out", unit: "spaces"},
 }
 
 // Lost is what the bounds left out before the document's body was read

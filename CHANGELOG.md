@@ -3,6 +3,19 @@
 All notable changes to go-fast-odf are recorded here, in the style of
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## v0.1.3 (2026-11-22)
+
+- The bound on names and labels that reach the output (slide names from
+  titles, sheet and table names, embedded documents' names, authors,
+  field names, anchors, axis titles, ...) is raised from 512 bytes to
+  4 KiB: 512 bytes held only some 170 characters of a script of three
+  bytes, and ordinary titles reached it. Past 4 KiB a name is cut where
+  a character starts (it was cut mid-character, the pieces written as
+  U+FFFD) and `limit.exceeded` is raised as before; addresses and cell
+  values cut at their own bounds are cut the same way.
+- Spaces past 65,536 asked for by one `text:s` are `limit.exceeded`,
+  once per part with the count; they were left out silently.
+
 ## v0.1.2 (2026-11-22)
 
 Every fixed bound that cuts what would appear in the output is now

@@ -64,7 +64,7 @@ func TestLabel(t *testing.T) {
 		}
 	}
 	long := Label(strings.Repeat("\u00e9", 5000))
-	if len(long) > maxLabel+3 || !utf8.ValidString(long) || len(long) < maxLabel/2 {
+	if len(long) > MaxLabel+3 || !utf8.ValidString(long) || len(long) < MaxLabel/2 {
 		t.Errorf("a long label came out %d bytes, valid=%v", len(long), utf8.ValidString(long))
 	}
 }
@@ -128,11 +128,21 @@ func TestBounded(t *testing.T) {
 			t.Errorf("Bounded(%q, %d) = %q, %v", in, c.limit, out, cut)
 		}
 	}
-	if out, cut := LabelCut(strings.Repeat("x", 600)); len(out) != maxLabel || !cut {
+	if out, cut := LabelCut(strings.Repeat("x", MaxLabel+88)); len(out) != MaxLabel || !cut {
 		t.Errorf("LabelCut: %d bytes, %v", len(out), cut)
 	}
-	if out, cut := AddressCut(strings.Repeat("x", 600)); len(out) != 600 || cut {
+	if out, cut := AddressCut(strings.Repeat("x", MaxLabel+88)); len(out) != MaxLabel+88 || cut {
 		t.Errorf("AddressCut: %d bytes, %v", len(out), cut)
+	}
+	// A title of three-byte characters well past 512 bytes is kept
+	// whole; one past the bound is cut where a character starts.
+	cjk := strings.Repeat(string(rune(0x6F22)), 1000)
+	if out, cut := LabelCut(cjk); out != cjk || cut {
+		t.Errorf("a 3000-byte title: %d bytes, %v", len(out), cut)
+	}
+	cjk = strings.Repeat(string(rune(0x6F22)), 2000)
+	if out, cut := LabelCut(cjk); !cut || len(out) != MaxLabel-MaxLabel%3 || !utf8.ValidString(out) || strings.ContainsRune(out, utf8.RuneError) {
+		t.Errorf("a 6000-byte title: %d bytes, %v", len(out), cut)
 	}
 }
 
