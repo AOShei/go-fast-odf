@@ -298,20 +298,20 @@ func TestChartCaps(t *testing.T) {
 	if n := len(limitsOn(doc, 0)); n != 1 {
 		t.Errorf("%d warnings: %q", n, limitsOn(doc, 0))
 	}
-	axis := `<chart:plot-area><chart:axis chart:dimension="x"><chart:title><text:p>` + strings.Repeat("X", 600) + `</text:p></chart:title></chart:axis>` +
-		`<chart:axis chart:dimension="y"><chart:title><text:p>` + strings.Repeat("Y", 600) + `</text:p></chart:title></chart:axis></chart:plot-area>`
+	axis := `<chart:plot-area><chart:axis chart:dimension="x"><chart:title><text:p>` + strings.Repeat("X", 4200) + `</text:p></chart:title></chart:axis>` +
+		`<chart:axis chart:dimension="y"><chart:title><text:p>` + strings.Repeat("Y", 4200) + `</text:p></chart:title></chart:axis></chart:plot-area>`
 	doc = extract(t, textDoc(t, "", chart(axis, `<table:table-row>`+cell("1")+`</table:table-row>`)), nil)
-	saysOnce(t, doc, 0, "names and labels longer than 512 bytes", "(2 names or labels)")
+	saysOnce(t, doc, 0, "names and labels longer than 4096 bytes", "(2 names or labels)")
 }
 
 func TestLabelAndAddressCaps(t *testing.T) {
-	long := strings.Repeat("C", 700)
+	long := strings.Repeat("C", 4200)
 	b := `<text:p>body<text:note text:id="n1" text:note-class="footnote"><text:note-citation>` + long + `</text:note-citation>` +
 		`<text:note-body><text:p>note</text:p></text:note-body></text:note></text:p>` +
 		`<text:list><text:list-item><text:number>` + long + `</text:number><text:p>item</text:p></text:list-item></text:list>` +
 		`<text:p><text:a xlink:href="https://example.com/` + strings.Repeat("q", 9000) + `">link</text:a></text:p>`
 	doc := extract(t, textDoc(t, "", b), &gofastcore.Options{Spans: true})
-	saysOnce(t, doc, 0, "names and labels longer than 512 bytes", "(2 names or labels)")
+	saysOnce(t, doc, 0, "names and labels longer than 4096 bytes", "(2 names or labels)")
 	saysOnce(t, doc, 0, "addresses longer than 8192 bytes", "(1 addresses)")
 	// Without spans no address is kept, and none is cut.
 	doc = extract(t, textDoc(t, "", b), nil)
@@ -480,7 +480,7 @@ func TestCapWarningsOnTheirPart(t *testing.T) {
 
 	// Slides: a cut label on slide 2; a cut label in a master page, said
 	// on each slide that shows it (1 and 3).
-	long := strings.Repeat("N", 700)
+	long := strings.Repeat("N", 4200)
 	master := `<style:master-page style:name="M"><draw:frame svg:y="1cm"><draw:text-box><text:list><text:list-item><text:number>` + long +
 		`</text:number><text:p>m</text:p></text:list-item></text:list></draw:text-box></draw:frame></style:master-page><style:master-page style:name="P"/>`
 	slide := func(m, text string) string {
@@ -491,10 +491,10 @@ func TestCapWarningsOnTheirPart(t *testing.T) {
 		slide("M", `<text:p>three</text:p>`) + slide("M", cutLabel) + `</office:presentation>`
 	doc = extract(t, bodyDoc(t, slideMIME, "", body, member{name: "styles.xml", data: stylesXML("", "", master)}), nil)
 	for i := range 3 {
-		saysOnce(t, doc, i, "names and labels longer than 512 bytes", "(1 names or labels)")
+		saysOnce(t, doc, i, "names and labels longer than 4096 bytes", "(1 names or labels)")
 	}
 	// A slide's own cut and its master's: one warning for the bound.
-	saysOnce(t, doc, 3, "names and labels longer than 512 bytes", "(2 names or labels)")
+	saysOnce(t, doc, 3, "names and labels longer than 4096 bytes", "(2 names or labels)")
 	if n := len(limitsOn(doc, 3)); n != 1 {
 		t.Errorf("slide 4: %q", limitsOn(doc, 3))
 	}
@@ -534,8 +534,8 @@ func TestMasterLossOnceForTheDocument(t *testing.T) {
 func TestMetadataCuts(t *testing.T) {
 	var m strings.Builder
 	m.WriteString(`<dc:title>` + strings.Repeat("t", 70000) + `</dc:title>`)
-	m.WriteString(`<dc:language>` + strings.Repeat("l", 600) + `</dc:language>`)
-	m.WriteString(`<meta:generator>` + strings.Repeat("g", 600) + `</meta:generator>`)
+	m.WriteString(`<dc:language>` + strings.Repeat("l", 4200) + `</dc:language>`)
+	m.WriteString(`<meta:generator>` + strings.Repeat("g", 4200) + `</meta:generator>`)
 	m.WriteString(`<meta:template xlink:href="https://example.com/` + strings.Repeat("q", 9000) + `"/>`)
 	for i := range 260 {
 		fmt.Fprintf(&m, `<meta:keyword>k%d</meta:keyword>`, i)
@@ -548,12 +548,12 @@ func TestMetadataCuts(t *testing.T) {
 	saysOnce(t, doc, -1, "metadata values longer than 65536 bytes", "(1 values)")
 	saysOnce(t, doc, -1, "keywords past the first 256", "(4 keywords)")
 	saysOnce(t, doc, -1, "user-defined properties past the first 256", "(2 properties)")
-	saysOnce(t, doc, -1, "names and labels longer than 512 bytes", "(2 names or labels)")
+	saysOnce(t, doc, -1, "names and labels longer than 4096 bytes", "(2 names or labels)")
 	saysOnce(t, doc, -1, "addresses longer than 8192 bytes", "(1 addresses)")
 	if hasWarning(doc, WarnPropertyTruncated) {
 		t.Error("odf.property_truncated raised")
 	}
-	if len(doc.Metadata.Language) != 512 || len(doc.Metadata.Keywords) != 256 {
+	if len(doc.Metadata.Language) != 4096 || len(doc.Metadata.Keywords) != 256 {
 		t.Errorf("language %d bytes, %d keywords", len(doc.Metadata.Language), len(doc.Metadata.Keywords))
 	}
 	// Under the bounds, nothing is said.
@@ -563,22 +563,22 @@ func TestMetadataCuts(t *testing.T) {
 // Names and labels that reach the output are said when cut, on the part
 // where they stand and only if what holds them is given.
 func TestNameCuts(t *testing.T) {
-	long := strings.Repeat("n", 600)
+	long := strings.Repeat("n", 4200)
 	b := `<table:table table:name="` + long + `"><table:table-row>` + cell("c") + `</table:table-row></table:table>` +
 		`<text:p xml:id="` + long + `">anchored</text:p>` +
 		`<text:p xml:id="` + long + `"></text:p>` + // not given: nothing said
 		`<text:p>x<office:annotation><dc:creator>` + long + `</dc:creator><text:p>comment</text:p></office:annotation></text:p>` +
 		`<text:p>y<office:annotation><dc:creator>` + long + `</dc:creator></office:annotation></text:p>` // no text: not given
 	doc := extract(t, textDoc(t, "", b), nil)
-	saysOnce(t, doc, 0, "names and labels longer than 512 bytes", "(3 names or labels)")
+	saysOnce(t, doc, 0, "names and labels longer than 4096 bytes", "(3 names or labels)")
 
 	sheets := `<office:spreadsheet><table:table table:name="A"><table:table-row>` + cell("a") + `</table:table-row></table:table>` +
 		`<table:table table:name="` + long + `"><table:table-row>` + cell("b") + `</table:table-row></table:table></office:spreadsheet>`
 	doc = extract(t, bodyDoc(t, sheetMIME, "", sheets), nil)
-	if len(limitsOn(doc, 0)) != 0 || len(doc.Parts[1].Name) != 512 {
+	if len(limitsOn(doc, 0)) != 0 || len(doc.Parts[1].Name) != 4096 {
 		t.Errorf("sheet 1 %q, name of %d bytes", limitsOn(doc, 0), len(doc.Parts[1].Name))
 	}
-	saysOnce(t, doc, 1, "names and labels longer than 512 bytes", "(1 names or labels)")
+	saysOnce(t, doc, 1, "names and labels longer than 4096 bytes", "(1 names or labels)")
 }
 
 // A picture held in a flat file past the bound on its size is said as
@@ -592,5 +592,26 @@ func TestInlinePictureCap(t *testing.T) {
 	saysOnce(t, doc, 0, "pictures held in the file in more than 64 MiB of base64", "(1 pictures)")
 	if hasWarning(doc, WarnUnreadContent) {
 		t.Error("odf.unread_content raised")
+	}
+}
+
+// Spaces a text:s asks for past the bound are text left out: said once
+// per part, with the count.
+func TestSpacesCap(t *testing.T) {
+	doc := extract(t, textDoc(t, "", `<text:p>a<text:s text:c="70000"/>b</text:p><text:p>c<text:s text:c="65537"/>d</text:p>`), nil)
+	saysOnce(t, doc, 0, "spaces past 65536 asked for by one text:s", "(4465 spaces)")
+	noLimits(t, extract(t, textDoc(t, "", `<text:p>a<text:s text:c="65536"/>b</text:p>`), nil))
+}
+
+// A title of three-byte characters longer than 512 bytes names its slide
+// whole.
+func TestLongTitleKept(t *testing.T) {
+	title := strings.Repeat(string(rune(0x6F22)), 600)
+	body := `<office:presentation><draw:page><draw:frame presentation:class="title"><draw:text-box><text:p>` + title +
+		`</text:p></draw:text-box></draw:frame></draw:page></office:presentation>`
+	doc := extract(t, bodyDoc(t, slideMIME, "", body), nil)
+	noLimits(t, doc)
+	if doc.Parts[0].Name != title {
+		t.Errorf("slide name of %d bytes", len(doc.Parts[0].Name))
 	}
 }

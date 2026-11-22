@@ -222,6 +222,7 @@ func (r *reader) inlineText(p *para, ru run, local string) {
 		n := 1
 		if v, err := strconv.Atoi(strings.TrimSpace(r.attr(ns.Text, "c"))); err == nil && v > 0 {
 			n = min(v, maxSpaces)
+			r.lost(capSpaces, int64(v-n))
 		}
 		r.literal(p, &ru, spaceRun[:n], false)
 		s.Skip()

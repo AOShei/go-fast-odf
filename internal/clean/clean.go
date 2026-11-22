@@ -120,9 +120,10 @@ func Append(dst, b []byte, flags Flags) ([]byte, int) {
 	return dst, removed
 }
 
-// maxLabel bounds a label. Names and messages are short; a longer one is
-// a file trying to be expensive.
-const maxLabel = 512
+// MaxLabel bounds a label. Names and messages are short, but a title
+// used as a name is a line of text, and in a script of three bytes a
+// character 512 bytes held only 170: 4 KiB holds any real one.
+const MaxLabel = 4 << 10
 
 // printable returns the length of the run of printable ASCII (0x20 to
 // 0x7E) that b begins with.
@@ -151,7 +152,7 @@ func printable(b []byte) int {
 // characters, no line breaks, trimmed, and of bounded length. It is for
 // part names, content types, addresses and error text, which a file
 // controls as much as it controls its content.
-func Label(s string) string { return bounded(s, maxLabel) }
+func Label(s string) string { return bounded(s, MaxLabel) }
 
 // maxAddress bounds an address. Addresses run longer than names: one with
 // a query or a token in it is often over a thousand bytes, and one cut
@@ -166,7 +167,7 @@ func Address(s string) string { return bounded(s, maxAddress) }
 
 // LabelCut is Label that also reports whether the bound left out
 // anything but white space.
-func LabelCut(s string) (string, bool) { return Bounded(s, maxLabel) }
+func LabelCut(s string) (string, bool) { return Bounded(s, MaxLabel) }
 
 // AddressCut is Address that also reports whether the bound left out
 // anything but white space.
@@ -191,13 +192,15 @@ func bounded(s string, limit int) string {
 		return strings.TrimSpace(s)
 	}
 	if len(s) > limit {
-		s = s[:limit]
+		// Cut where a character starts, so that none is split.
+		n := limit
+		for n > 0 && n > limit-utf8.UTFMax && !utf8.RuneStart(s[n]) {
+			n--
+		}
+		s = s[:n]
 	}
 	out, _ := String([]byte(s), Trim)
-	out = strings.Join(strings.Fields(out), " ")
-	// Cutting may have split a character; String turned the pieces into
-	// U+FFFD, which says honestly that something stood there.
-	return out
+	return strings.Join(strings.Fields(out), " ")
 }
 
 // Name is Label for a name that is text to be read, such as the name of
