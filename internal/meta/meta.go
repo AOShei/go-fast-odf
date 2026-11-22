@@ -23,9 +23,11 @@ type Result struct {
 	Damaged bool
 	// Budget says the decompression limit was reached while reading it.
 	Budget bool
-	// Truncated counts values cut to maxValueBytes and user-defined
-	// properties left out beyond maxUserDefined.
-	Truncated int
+	// What the bounds left out: values cut at MaxValueBytes, keywords
+	// and user-defined properties past MaxKeywords and MaxUserDefined,
+	// names (language, generator, authors, property names) cut at the
+	// length of a label, addresses cut at the length of an address.
+	CutValues, Keywords, UserDefined, CutNames, CutAddresses int
 	// Removed counts control characters removed.
 	Removed int
 	// Refresh is the address an auto-reload element tells a reader to
@@ -33,10 +35,11 @@ type Result struct {
 	Refresh string
 }
 
+// Bounds on the metadata kept.
 const (
-	maxValueBytes  = 64 << 10
-	maxUserDefined = 256
-	maxKeywords    = 256
+	MaxValueBytes  = 64 << 10
+	MaxUserDefined = 256
+	MaxKeywords    = 256
 )
 
 // Read reads meta.xml from the package. A package without one has no
@@ -97,7 +100,7 @@ func ReadFrom(s *xmlscan.Scanner, res *Result) {
 		case space == ns.DC && local == "description":
 			extra(m, "description", value(s, res))
 		case space == ns.DC && local == "language":
-			m.Language = clean.Label(value(s, res))
+			m.Language = res.label(value(s, res))
 		case space == ns.DC && local == "creator":
 			creator = value(s, res)
 		case space == ns.Meta && local == "initial-creator":
@@ -111,13 +114,13 @@ func ReadFrom(s *xmlscan.Scanner, res *Result) {
 		case space == ns.Meta && local == "printed-by":
 			extra(m, "printed_by", value(s, res))
 		case space == ns.Meta && local == "generator":
-			m.Application = clean.Label(value(s, res))
+			m.Application = res.label(value(s, res))
 		case space == ns.Meta && local == "keyword":
 			if v := value(s, res); v != "" {
-				if len(m.Keywords) < maxKeywords {
+				if len(m.Keywords) < MaxKeywords {
 					m.Keywords = append(m.Keywords, v)
 				} else {
-					res.Truncated++
+					res.Keywords++
 				}
 			}
 		case space == ns.Meta && local == "editing-cycles":
@@ -126,34 +129,59 @@ func ReadFrom(s *xmlscan.Scanner, res *Result) {
 			extra(m, "editing_duration", value(s, res))
 		case space == ns.Meta && local == "template":
 			href, _ := s.Attr(ns.XLink, "href")
-			extra(m, "template", clean.Address(string(href)))
+			v, cut := clean.AddressCut(string(href))
+			if cut {
+				res.CutAddresses++
+			}
+			extra(m, "template", v)
 		case space == ns.Meta && local == "auto-reload":
 			href, _ := s.Attr(ns.XLink, "href")
 			res.Refresh = clean.Address(string(href))
 		case space == ns.Meta && local == "user-defined":
+			// The name is copied before the value is read: reading on
+			// reuses the scanner's buffer.
 			name, _ := s.Attr(ns.Meta, "name")
-			key := clean.Name(string(name))
+			raw := string(name)
 			v := value(s, res)
-			if key == "" || v == "" {
+			if v == "" || clean.Label(raw) == "" {
 				continue
 			}
-			if users >= maxUserDefined {
-				res.Truncated++
+			if users >= MaxUserDefined {
+				res.UserDefined++
 				continue
 			}
 			users++
+			key := res.name(raw)
 			extra(m, "custom:"+key, v)
 		}
 	}
 	switch {
 	case initial != "":
-		m.Authors = []string{clean.Name(initial)}
+		m.Authors = []string{res.name(initial)}
 		if creator != "" && creator != initial {
-			extra(m, "last_modified_by", clean.Name(creator))
+			extra(m, "last_modified_by", res.name(creator))
 		}
 	case creator != "":
-		m.Authors = []string{clean.Name(creator)}
+		m.Authors = []string{res.name(creator)}
 	}
+}
+
+// label is clean.Label, counting a cut.
+func (res *Result) label(s string) string {
+	v, cut := clean.LabelCut(s)
+	if cut {
+		res.CutNames++
+	}
+	return v
+}
+
+// name is clean.Name, counting a cut.
+func (res *Result) name(s string) string {
+	v, cut := clean.NameCut(s)
+	if cut {
+		res.CutNames++
+	}
+	return v
 }
 
 // value reads the text of the current element, bounded, cleaned.
@@ -165,17 +193,17 @@ func value(s *xmlscan.Scanner, res *Result) string {
 		if k == xmlscan.EOF || k == xmlscan.End && s.Depth() < depth {
 			break
 		}
-		if k == xmlscan.Text && len(text) <= maxValueBytes {
+		if k == xmlscan.Text && len(text) <= MaxValueBytes {
 			text = append(text, s.Text()...)
 		}
 	}
-	if len(text) > maxValueBytes {
-		n := maxValueBytes
+	if len(text) > MaxValueBytes {
+		n := MaxValueBytes
 		for n > 0 && !utf8.RuneStart(text[n]) {
 			n--
 		}
 		text = text[:n]
-		res.Truncated++
+		res.CutValues++
 	}
 	v, removed := clean.String(text, clean.Prose)
 	res.Removed += removed

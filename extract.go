@@ -57,11 +57,12 @@ const (
 // regions and parts (gofastcore.Display), not in warnings.
 const (
 	// WarnUnreadContent: the document holds content of a kind this
-	// version does not read: plug-ins and floating frames, pictures held
-	// in a flat file in more than 64 MiB of base64, embedded objects that
-	// could not be read (a formula or chart whose content gives none, an
-	// object whose directory has no content.xml), documents held whole
-	// in a flat file. The message says what and how many.
+	// version does not read: plug-ins and floating frames, embedded
+	// objects that could not be read (a formula or chart whose content
+	// gives none, an object whose directory has no content.xml),
+	// documents held whole in a flat file. The message says what and how
+	// many. A picture over 64 MiB of base64 in a flat file, which v0.1.1
+	// reported here, is gofastcore.WarnLimitExceeded.
 	WarnUnreadContent = odt.WarnUnreadContent
 	// WarnRegionSplit: an area of a sheet whose cells are spread so thinly
 	// that the rectangle around them is mostly empty was not written as
@@ -76,9 +77,12 @@ const (
 	// WarnPartDamaged: a supporting stream (manifest, styles, metadata)
 	// could not be read to its end; what was read is used.
 	WarnPartDamaged = odt.WarnPartDamaged
-	// WarnPropertyTruncated: a metadata value was longer than 64 KiB and
-	// was cut there, or there were more user-defined properties or
-	// keywords than are kept (256 each) and the rest were left out.
+	// WarnPropertyTruncated was raised by v0.1.1 and earlier when a
+	// metadata value was cut at 64 KiB or keywords or user-defined
+	// properties past 256 were left out.
+	//
+	// Deprecated: these cuts are reported as gofastcore.WarnLimitExceeded,
+	// as every bound that cuts output is; this code is no longer raised.
 	WarnPropertyTruncated = "odf.property_truncated"
 	// WarnControlCharsRemoved: control characters with no meaning as text
 	// were removed from extracted strings.
@@ -323,9 +327,6 @@ func (e *Extractor) Extract(ctx context.Context, r io.ReaderAt, size int64, opts
 	case md.Damaged:
 		warn(gofastcore.SeverityWarning, WarnPartDamaged, "meta.xml could not be read to its end; the properties read before are kept")
 	}
-	if md.Truncated > 0 {
-		warn(gofastcore.SeverityWarning, WarnPropertyTruncated, fmt.Sprintf("%d values", md.Truncated))
-	}
 	if md.Removed > 0 {
 		warn(gofastcore.SeverityInfo, WarnControlCharsRemoved, fmt.Sprintf("%d in document properties", md.Removed))
 	}
@@ -346,7 +347,9 @@ func (e *Extractor) Extract(ctx context.Context, r io.ReaderAt, size int64, opts
 		warn(gofastcore.SeverityError, gofastcore.WarnLimitExceeded, fmt.Sprintf("the document defines more than %d styles; the rest are not used", style.MaxStyles))
 	}
 
-	res, err := odt.Read(ctx, pkg, set, &o, odt.Config{MaxCells: gofastcore.ResolveLimit(e.MaxCells, DefaultMaxCells)})
+	lost := odt.Lost{MetaValues: int64(md.CutValues), Keywords: int64(md.Keywords), UserDefined: int64(md.UserDefined),
+		Labels: int64(md.CutNames + pkg.CutLabels()), Addresses: int64(md.CutAddresses)}
+	res, err := odt.Read(ctx, pkg, set, &o, odt.Config{MaxCells: gofastcore.ResolveLimit(e.MaxCells, DefaultMaxCells), Lost: lost})
 	if err != nil {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()

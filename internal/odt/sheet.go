@@ -343,7 +343,7 @@ func (r *reader) namedRanges(sheet string) {
 		default:
 			continue
 		}
-		name := clean.Name(r.attr(ns.Table, "name"))
+		name := r.name(r.attr(ns.Table, "name"))
 		if sheet != "" && name != "" {
 			name = sheet + "!" + name
 		}
@@ -380,7 +380,7 @@ func (r *reader) namedRanges(sheet string) {
 
 // sheet reads table:table into a part.
 func (r *reader) sheet(n int) gofastcore.Part {
-	name := clean.Name(r.attr(ns.Table, "name"))
+	name := r.name(r.attr(ns.Table, "name"))
 	part := gofastcore.Part{Kind: gofastcore.PartSheet, Number: n, Name: name}
 	// table:display="false", declared through the table's style. This
 	// includes LibreOffice's copies of sheets of other files that
@@ -834,7 +834,7 @@ func (r *reader) regions(sh *sheetIn, part *gofastcore.Part) []gofastcore.Block 
 		}
 		b := sh.choices[name]
 		note := gofastcore.Block{Kind: gofastcore.KindNote, Text: v.text, Loc: gofastcore.Location{Range: rangeRef(b[0], b[1], b[2], b[3])},
-			Attrs: map[string]string{gofastcore.AttrNoteType: gofastcore.NoteChoices, gofastcore.AttrField: clean.Name(name)}}
+			Attrs: map[string]string{gofastcore.AttrNoteType: gofastcore.NoteChoices, gofastcore.AttrField: r.name(name)}}
 		if !r.emit(&out, note) {
 			break
 		}

@@ -15,6 +15,7 @@ import (
 type deletion struct {
 	order        int
 	author, date string
+	cuts         int64 // of author and date, at the length of a label
 	blocks       []gofastcore.Block
 }
 
@@ -121,6 +122,7 @@ func (r *reader) note(p *para, ru run) {
 	class := r.attr(ns.Text, "note-class")
 	var marker string
 	var body []gofastcore.Block
+	markerCut := false
 	depth := s.Depth()
 	for {
 		k := s.Next()
@@ -138,12 +140,15 @@ func (r *reader) note(p *para, ru run) {
 				label = string(v)
 			}
 			marker, _ = clean.String([]byte(label), clean.Prose)
-			marker = r.label(marker)
+			marker, markerCut = clean.LabelCut(marker)
 		case "note-body":
 			r.blocks(ctxt{hidden: reasons(&ru) & gofastcore.DisplayHidden}, &body)
 		}
 	}
 	text, spans, all, rest := r.flatten(body, true)
+	if markerCut && text != "" {
+		r.lost(capLabel, 1)
+	}
 	dst := &p.after
 	if class == "endnote" {
 		dst = &r.endnotes
@@ -161,6 +166,7 @@ func (r *reader) note(p *para, ru run) {
 func (r *reader) annotation(c ctxt, dst *[]gofastcore.Block) {
 	s := &r.s
 	var author, date string
+	var cuts int64 // of author and date, said if the comment is given
 	var body []gofastcore.Block
 	depth := s.Depth()
 	for {
@@ -173,12 +179,12 @@ func (r *reader) annotation(c ctxt, dst *[]gofastcore.Block) {
 		}
 		switch {
 		case s.Space() == ns.DC && string(s.Local()) == "creator":
-			author = clean.Name(string(s.AppendText(nil)))
+			author = cutName(string(s.AppendText(nil)), &cuts)
 		case s.Space() == ns.DC && string(s.Local()) == "date":
-			date = clean.Label(string(s.AppendText(nil)))
+			date = cutLabel(string(s.AppendText(nil)), &cuts)
 		case s.Space() == ns.Meta && string(s.Local()) == "date-string":
 			if date == "" {
-				date = clean.Label(string(s.AppendText(nil)))
+				date = cutLabel(string(s.AppendText(nil)), &cuts)
 			} else {
 				s.Skip()
 			}
@@ -189,6 +195,7 @@ func (r *reader) annotation(c ctxt, dst *[]gofastcore.Block) {
 	text, spans, all, rest := r.flatten(body, false)
 	if text != "" {
 		attrs := map[string]string{gofastcore.AttrNoteType: gofastcore.NoteComment}
+		r.lost(capLabel, cuts)
 		if author != "" {
 			attrs[gofastcore.AttrAuthor] = author
 		}
@@ -261,9 +268,9 @@ func (r *reader) readDeletion(d *deletion) {
 				}
 				switch {
 				case s.Space() == ns.DC && string(s.Local()) == "creator":
-					d.author = clean.Name(string(s.AppendText(nil)))
+					d.author = cutName(string(s.AppendText(nil)), &d.cuts)
 				case s.Space() == ns.DC && string(s.Local()) == "date":
-					d.date = clean.Label(string(s.AppendText(nil)))
+					d.date = cutLabel(string(s.AppendText(nil)), &d.cuts)
 				default:
 					s.Skip()
 				}
@@ -285,6 +292,7 @@ func (r *reader) useDeletion(id string, dst *[]gofastcore.Block) {
 	d.blocks = nil
 	if text != "" {
 		attrs := map[string]string{gofastcore.AttrNoteType: gofastcore.NoteDeletion}
+		r.lost(capLabel, d.cuts)
 		if d.author != "" {
 			attrs[gofastcore.AttrAuthor] = d.author
 		}

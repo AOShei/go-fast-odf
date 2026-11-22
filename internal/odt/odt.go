@@ -43,6 +43,9 @@ type Config struct {
 	// MaxCells bounds the table cells kept from the document; negative
 	// means no limit.
 	MaxCells int64
+	// Lost is what bounds left out of the metadata and manifest, said
+	// on the document.
+	Lost Lost
 }
 
 // Result is what reading the document gave.
@@ -185,6 +188,13 @@ func Read(ctx context.Context, pkg *odpkg.Package, set *style.Set, opts *gofastc
 			Message: fmt.Sprintf("%d control characters removed from the text", r.removed)})
 	}
 	r.unplacedControls()
+	// What the metadata and manifest lost, with what the body lost that
+	// belongs to no part: one warning per bound.
+	r.lost(capMetaValue, cfg.Lost.MetaValues)
+	r.lost(capKeywords, cfg.Lost.Keywords)
+	r.lost(capUserDefined, cfg.Lost.UserDefined)
+	r.lost(capLabel, cfg.Lost.Labels)
+	r.lost(capAddress, cfg.Lost.Addresses)
 	r.sayLost(nil, &res.Warnings)
 	res.Children = r.children
 	if len(r.userVars) > 0 {
@@ -496,7 +506,7 @@ func (r *reader) userFields() {
 		if k != xmlscan.Start || s.Space() != ns.Text || string(s.Local()) != "user-field-decl" {
 			continue
 		}
-		name := clean.Name(r.attr(ns.Text, "name"))
+		name := r.name(r.attr(ns.Text, "name"))
 		value := ""
 		for _, a := range []string{"string-value", "value", "date-value", "time-value", "boolean-value"} {
 			if v, ok := s.Attr(ns.Office, a); ok {
@@ -541,6 +551,7 @@ type para struct {
 	space     bool // the last thing written was white space, or nothing
 	marker    string
 	hasMarker bool
+	markerCut bool               // the producer's label was cut at the length of a label
 	hidden    gofastcore.Display // the paragraph is hidden (text:hidden-paragraph)
 	cut       bool
 }
@@ -551,7 +562,9 @@ func (r *reader) paragraph(c ctxt, heading bool, item *itemCtx, dst *[]gofastcor
 	s := &r.s
 	styleName := r.attr(ns.Text, "style-name")
 	ps := r.set.Para(r.sc, styleName)
-	anchor := clean.Label(r.attr(xmlscan.SpaceXML, "id"))
+	var cuts int64     // of the anchor, said if the paragraph is given
+	markerCut := false // of the label given, said likewise
+	anchor := cutLabel(r.attr(xmlscan.SpaceXML, "id"), &cuts)
 	level := 0
 	isHeader := false
 	if heading {
@@ -572,7 +585,7 @@ func (r *reader) paragraph(c ctxt, heading bool, item *itemCtx, dst *[]gofastcor
 			r.outline.restart(level, start)
 		}
 		if anchor == "" {
-			anchor = clean.Label(r.attr(ns.Text, "id"))
+			anchor = cutLabel(r.attr(ns.Text, "id"), &cuts)
 		}
 	}
 	p := &para{space: true}
@@ -611,20 +624,22 @@ func (r *reader) paragraph(c ctxt, heading bool, item *itemCtx, dst *[]gofastcor
 		switch {
 		case item != nil:
 			b.Marker, b.Ordered = item.marker()
+			markerCut = item.cut
 		case !isHeader:
-			b.Marker = r.outlineMarker(level)
+			b.Marker, markerCut = r.outlineMarker(level)
 		}
 		if p.hasMarker {
-			b.Marker = p.marker // as the producer numbered it
+			b.Marker, markerCut = p.marker, p.markerCut // as the producer numbered it
 		}
 	case item != nil:
 		b.Kind = gofastcore.KindListItem
 		b.Level = uint8(min(item.depth, 255))
 		if p.hasMarker {
-			b.Marker = p.marker
+			b.Marker, markerCut = p.marker, p.markerCut
 			_, b.Ordered = item.marker()
 		} else {
 			b.Marker, b.Ordered = item.marker()
+			markerCut = item.cut
 		}
 	case c.list != nil:
 		// A further paragraph of a list item: part of the item, with no
@@ -640,6 +655,10 @@ func (r *reader) paragraph(c ctxt, heading bool, item *itemCtx, dst *[]gofastcor
 		if !r.emit(dst, b) {
 			return
 		}
+		if markerCut {
+			cuts++
+		}
+		r.lost(capLabel, cuts)
 	}
 	// What stands after the paragraph was charged when it was read.
 	*dst = append(*dst, p.after...)

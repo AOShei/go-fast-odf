@@ -236,7 +236,7 @@ func (r *reader) inlineText(p *para, ru run, local string) {
 		// computed it.
 		v := s.AppendText(nil)
 		p.marker, _ = clean.String(v, clean.Prose)
-		p.marker = r.label(p.marker)
+		p.marker, p.markerCut = clean.LabelCut(p.marker)
 		p.hasMarker = p.marker != ""
 	case "note":
 		r.note(p, ru)
@@ -336,7 +336,8 @@ func (r *reader) conditional(p *para, ru run) {
 // values offered become a choices note.
 func (r *reader) dropDown(p *para, ru run) {
 	s := &r.s
-	name := clean.Name(r.attr(ns.Text, "name"))
+	var cuts int64
+	name := cutName(r.attr(ns.Text, "name"), &cuts)
 	var values []string
 	depth := s.Depth()
 	for {
@@ -362,6 +363,7 @@ func (r *reader) dropDown(p *para, ru run) {
 	if len(values) == 0 {
 		return
 	}
+	r.lost(capLabel, cuts)
 	b := gofastcore.Block{Kind: gofastcore.KindNote, Text: strings.Join(values, "\n"),
 		Attrs: map[string]string{gofastcore.AttrNoteType: gofastcore.NoteChoices}}
 	if name != "" {

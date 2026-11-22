@@ -102,6 +102,7 @@ type Package struct {
 	mime      string // what the mimetype member says, or the manifest's root entry
 	damaged   bool   // the manifest could not be read to its end
 	full      bool   // the manifest has more entries than are read
+	cutLabels int    // media types in the manifest cut at the length of a label
 	password  string
 	ctx       context.Context // stops key derivation; nil for none
 	kdfWork   atomic.Int64    // PBKDF2 iterations spent
@@ -293,6 +294,10 @@ func (p *Package) Ambiguous() int { return p.ambiguous }
 
 // ManifestDamaged reports that the manifest could not be read to its end.
 func (p *Package) ManifestDamaged() bool { return p.damaged }
+
+// CutLabels returns how many media types in the manifest were cut at the
+// length of a label.
+func (p *Package) CutLabels() int { return p.cutLabels }
 
 // ManifestFull reports whether the manifest has more entries than are
 // read (MaxManifestEntries); what the rest say of their members is not
@@ -508,7 +513,11 @@ func (p *Package) readManifest() error {
 					cur = Canonical(full)
 				}
 				size, _ := strconv.ParseInt(strings.TrimSpace(attr("size")), 10, 64)
-				p.manifest[cur] = Entry{MediaType: clean.Label(attr("media-type")), Size: size}
+				mt, cut := clean.LabelCut(attr("media-type"))
+				if cut {
+					p.cutLabels++
+				}
+				p.manifest[cur] = Entry{MediaType: mt, Size: size}
 			case "encryption-data":
 				enc = &Encryption{ChecksumType: attr("checksum-type"), Checksum: attr("checksum")}
 				if e, ok := p.manifest[cur]; ok {

@@ -135,6 +135,7 @@ type itemCtx struct {
 	depth int
 	start int // a start value the item sets, or -1
 	label string
+	cut   bool // the label was cut at the length of a label
 	done  bool
 }
 
@@ -148,7 +149,7 @@ func (it *itemCtx) marker() (string, bool) {
 	lv := l.style.Level(it.depth)
 	switch lv.Kind {
 	case 'b':
-		it.label = clean.Label(lv.Bullet)
+		it.label, it.cut = clean.LabelCut(lv.Bullet)
 		if it.label == "" {
 			it.label = "•"
 		}
@@ -162,7 +163,7 @@ func (it *itemCtx) marker() (string, bool) {
 			l.count.restart(it.depth, it.start)
 		}
 		l.count.next(it.depth, start)
-		it.label = formatNumber(l.style, l.count, it.depth, lv)
+		it.label, it.cut = clean.LabelCut(formatNumber(l.style, l.count, it.depth, lv))
 		return it.label, lv.Format != ""
 	}
 	// No level style: a plain bullet.
@@ -170,10 +171,11 @@ func (it *itemCtx) marker() (string, bool) {
 	return it.label, false
 }
 
-// formatNumber writes the label of an item at depth.
+// formatNumber writes the label of an item at depth, as the style gives
+// it: the caller makes it a label.
 func formatNumber(ls *style.ListStyle, c *counters, depth int, lv style.ListLevel) string {
 	if lv.Format == "" {
-		return clean.Label(lv.Prefix + lv.Suffix)
+		return lv.Prefix + lv.Suffix
 	}
 	first := max(depth-lv.DisplayLevels+1, 1)
 	var parts []string
@@ -193,7 +195,7 @@ func formatNumber(ls *style.ListStyle, c *counters, depth int, lv style.ListLeve
 		}
 		parts = append(parts, number(n, format, f.LetterSync))
 	}
-	return clean.Label(lv.Prefix + strings.Join(parts, ".") + lv.Suffix)
+	return lv.Prefix + strings.Join(parts, ".") + lv.Suffix
 }
 
 // number writes n in a list numbering format: 1, a, A, i, I. Formats
@@ -321,6 +323,7 @@ func (r *reader) item(c ctxt, l *listCtx, it *itemCtx, dst *[]gofastcore.Block) 
 	inner := ctxt{hidden: c.hidden, list: l}
 	first := true
 	var given string // a text:number the item carries
+	var givenCut bool
 	depth := s.Depth()
 	for {
 		k := s.Next()
@@ -334,7 +337,7 @@ func (r *reader) item(c ctxt, l *listCtx, it *itemCtx, dst *[]gofastcore.Block) 
 		switch {
 		case space == ns.Text && local == "number":
 			v, _ := clean.String(s.AppendText(nil), clean.Prose)
-			given = r.label(v)
+			given, givenCut = clean.LabelCut(v)
 		case space == ns.Text && (local == "p" || local == "h"):
 			var use *itemCtx
 			if first {
@@ -343,7 +346,7 @@ func (r *reader) item(c ctxt, l *listCtx, it *itemCtx, dst *[]gofastcore.Block) 
 					use = it
 					if given != "" {
 						use.marker() // counted all the same
-						use.label = given
+						use.label, use.cut = given, givenCut
 					}
 				} else {
 					use = &itemCtx{list: l, depth: l.depth, done: true}
@@ -387,6 +390,7 @@ func (r *reader) numberedParagraph(c ctxt, dst *[]gofastcore.Block) {
 		it.start = n
 	}
 	var given string
+	var givenCut bool
 	depth := s.Depth()
 	for {
 		k := s.Next()
@@ -399,11 +403,11 @@ func (r *reader) numberedParagraph(c ctxt, dst *[]gofastcore.Block) {
 		switch {
 		case s.Space() == ns.Text && string(s.Local()) == "number":
 			v, _ := clean.String(s.AppendText(nil), clean.Prose)
-			given = r.label(v)
+			given, givenCut = clean.LabelCut(v)
 		case s.Space() == ns.Text && (string(s.Local()) == "p" || string(s.Local()) == "h"):
 			if given != "" {
 				it.marker()
-				it.label = given
+				it.label, it.cut = given, givenCut
 			}
 			r.paragraph(c, string(s.Local()) == "h", it, dst)
 		default:
@@ -414,18 +418,18 @@ func (r *reader) numberedParagraph(c ctxt, dst *[]gofastcore.Block) {
 
 // outlineMarker counts a heading at level and returns its number, if the
 // outline style numbers headings.
-func (r *reader) outlineMarker(level int) string {
+func (r *reader) outlineMarker(level int) (string, bool) {
 	ls := r.set.Outline()
 	if ls == nil {
-		return ""
+		return "", false
 	}
 	lv := ls.Level(level)
 	if lv.Kind != 'n' {
-		return ""
+		return "", false
 	}
 	r.outline.next(level, lv.Start)
 	if lv.Format == "" {
-		return clean.Label(lv.Prefix + lv.Suffix)
+		return clean.LabelCut(lv.Prefix + lv.Suffix)
 	}
-	return formatNumber(ls, &r.outline, level, lv)
+	return clean.LabelCut(formatNumber(ls, &r.outline, level, lv))
 }

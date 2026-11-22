@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/AOShei/go-fast-core"
+	"github.com/AOShei/go-fast-odf/internal/odt"
 )
 
 // The fixed bounds that leave content out say so: limit.exceeded, once
@@ -300,7 +301,7 @@ func TestChartCaps(t *testing.T) {
 	axis := `<chart:plot-area><chart:axis chart:dimension="x"><chart:title><text:p>` + strings.Repeat("X", 600) + `</text:p></chart:title></chart:axis>` +
 		`<chart:axis chart:dimension="y"><chart:title><text:p>` + strings.Repeat("Y", 600) + `</text:p></chart:title></chart:axis></chart:plot-area>`
 	doc = extract(t, textDoc(t, "", chart(axis, `<table:table-row>`+cell("1")+`</table:table-row>`)), nil)
-	saysOnce(t, doc, 0, "labels longer than 512 bytes", "(2 labels)")
+	saysOnce(t, doc, 0, "names and labels longer than 512 bytes", "(2 names or labels)")
 }
 
 func TestLabelAndAddressCaps(t *testing.T) {
@@ -310,8 +311,8 @@ func TestLabelAndAddressCaps(t *testing.T) {
 		`<text:list><text:list-item><text:number>` + long + `</text:number><text:p>item</text:p></text:list-item></text:list>` +
 		`<text:p><text:a xlink:href="https://example.com/` + strings.Repeat("q", 9000) + `">link</text:a></text:p>`
 	doc := extract(t, textDoc(t, "", b), &gofastcore.Options{Spans: true})
-	saysOnce(t, doc, 0, "labels longer than 512 bytes", "(2 labels)")
-	saysOnce(t, doc, 0, "link addresses longer than 8192 bytes", "(1 addresses)")
+	saysOnce(t, doc, 0, "names and labels longer than 512 bytes", "(2 names or labels)")
+	saysOnce(t, doc, 0, "addresses longer than 8192 bytes", "(1 addresses)")
 	// Without spans no address is kept, and none is cut.
 	doc = extract(t, textDoc(t, "", b), nil)
 	if len(limitsOn(doc, 0)) != 1 {
@@ -490,10 +491,10 @@ func TestCapWarningsOnTheirPart(t *testing.T) {
 		slide("M", `<text:p>three</text:p>`) + slide("M", cutLabel) + `</office:presentation>`
 	doc = extract(t, bodyDoc(t, slideMIME, "", body, member{name: "styles.xml", data: stylesXML("", "", master)}), nil)
 	for i := range 3 {
-		saysOnce(t, doc, i, "labels longer than 512 bytes", "(1 labels)")
+		saysOnce(t, doc, i, "names and labels longer than 512 bytes", "(1 names or labels)")
 	}
 	// A slide's own cut and its master's: one warning for the bound.
-	saysOnce(t, doc, 3, "labels longer than 512 bytes", "(2 labels)")
+	saysOnce(t, doc, 3, "names and labels longer than 512 bytes", "(2 names or labels)")
 	if n := len(limitsOn(doc, 3)); n != 1 {
 		t.Errorf("slide 4: %q", limitsOn(doc, 3))
 	}
@@ -524,5 +525,72 @@ func TestMasterLossOnceForTheDocument(t *testing.T) {
 		if l := limitsOn(doc, i); len(l) != 0 {
 			t.Errorf("slide %d: %q", i+1, l)
 		}
+	}
+}
+
+// Metadata cut by a bound is said on the document as limit.exceeded,
+// never as odf.property_truncated; names cut at the length of a label are
+// one warning with those the body loses that belong to no part.
+func TestMetadataCuts(t *testing.T) {
+	var m strings.Builder
+	m.WriteString(`<dc:title>` + strings.Repeat("t", 70000) + `</dc:title>`)
+	m.WriteString(`<dc:language>` + strings.Repeat("l", 600) + `</dc:language>`)
+	m.WriteString(`<meta:generator>` + strings.Repeat("g", 600) + `</meta:generator>`)
+	m.WriteString(`<meta:template xlink:href="https://example.com/` + strings.Repeat("q", 9000) + `"/>`)
+	for i := range 260 {
+		fmt.Fprintf(&m, `<meta:keyword>k%d</meta:keyword>`, i)
+	}
+	for i := range 258 {
+		fmt.Fprintf(&m, `<meta:user-defined meta:name="p%d">v</meta:user-defined>`, i)
+	}
+	data := textDoc(t, "", `<text:p>x</text:p>`, member{name: "meta.xml", data: metaXML(m.String())})
+	doc := extract(t, data, nil)
+	saysOnce(t, doc, -1, "metadata values longer than 65536 bytes", "(1 values)")
+	saysOnce(t, doc, -1, "keywords past the first 256", "(4 keywords)")
+	saysOnce(t, doc, -1, "user-defined properties past the first 256", "(2 properties)")
+	saysOnce(t, doc, -1, "names and labels longer than 512 bytes", "(2 names or labels)")
+	saysOnce(t, doc, -1, "addresses longer than 8192 bytes", "(1 addresses)")
+	if hasWarning(doc, WarnPropertyTruncated) {
+		t.Error("odf.property_truncated raised")
+	}
+	if len(doc.Metadata.Language) != 512 || len(doc.Metadata.Keywords) != 256 {
+		t.Errorf("language %d bytes, %d keywords", len(doc.Metadata.Language), len(doc.Metadata.Keywords))
+	}
+	// Under the bounds, nothing is said.
+	noLimits(t, extract(t, textDoc(t, "", `<text:p>x</text:p>`, member{name: "meta.xml", data: metaXML(`<dc:language>en-GB</dc:language><meta:keyword>k</meta:keyword>`)}), nil))
+}
+
+// Names and labels that reach the output are said when cut, on the part
+// where they stand and only if what holds them is given.
+func TestNameCuts(t *testing.T) {
+	long := strings.Repeat("n", 600)
+	b := `<table:table table:name="` + long + `"><table:table-row>` + cell("c") + `</table:table-row></table:table>` +
+		`<text:p xml:id="` + long + `">anchored</text:p>` +
+		`<text:p xml:id="` + long + `"></text:p>` + // not given: nothing said
+		`<text:p>x<office:annotation><dc:creator>` + long + `</dc:creator><text:p>comment</text:p></office:annotation></text:p>` +
+		`<text:p>y<office:annotation><dc:creator>` + long + `</dc:creator></office:annotation></text:p>` // no text: not given
+	doc := extract(t, textDoc(t, "", b), nil)
+	saysOnce(t, doc, 0, "names and labels longer than 512 bytes", "(3 names or labels)")
+
+	sheets := `<office:spreadsheet><table:table table:name="A"><table:table-row>` + cell("a") + `</table:table-row></table:table>` +
+		`<table:table table:name="` + long + `"><table:table-row>` + cell("b") + `</table:table-row></table:table></office:spreadsheet>`
+	doc = extract(t, bodyDoc(t, sheetMIME, "", sheets), nil)
+	if len(limitsOn(doc, 0)) != 0 || len(doc.Parts[1].Name) != 512 {
+		t.Errorf("sheet 1 %q, name of %d bytes", limitsOn(doc, 0), len(doc.Parts[1].Name))
+	}
+	saysOnce(t, doc, 1, "names and labels longer than 512 bytes", "(1 names or labels)")
+}
+
+// A picture held in a flat file past the bound on its size is said as
+// limit.exceeded, not odf.unread_content.
+func TestInlinePictureCap(t *testing.T) {
+	defer odt.SetMaxInlineForTest(100)()
+	flat := `<?xml version="1.0" encoding="UTF-8"?><office:document` + namespaces + ` office:version="1.3" office:mimetype="application/vnd.oasis.opendocument.text">` +
+		`<office:body><office:text><text:p>text</text:p><text:p><draw:frame><draw:image><office:binary-data>` + strings.Repeat("QUJD", 100) +
+		`</office:binary-data></draw:image></draw:frame></text:p></office:text></office:body></office:document>`
+	doc := extract(t, []byte(flat), nil)
+	saysOnce(t, doc, 0, "pictures held in the file in more than 64 MiB of base64", "(1 pictures)")
+	if hasWarning(doc, WarnUnreadContent) {
+		t.Error("odf.unread_content raised")
 	}
 }

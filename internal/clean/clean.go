@@ -203,7 +203,18 @@ func bounded(s string, limit int) string {
 // Name is Label for a name that is text to be read, such as the name of
 // an author: its ligatures are written as their letters as well.
 func Name(s string) string {
-	s = Label(s)
+	v, _ := NameCut(s)
+	return v
+}
+
+// NameCut is Name that also reports whether the bound left out anything
+// but white space.
+func NameCut(s string) (string, bool) {
+	s, cut := LabelCut(s)
+	return ligatures(s), cut
+}
+
+func ligatures(s string) string {
 	if strings.IndexByte(s, 0xEF) < 0 {
 		return s // every ligature starts with this byte
 	}

@@ -3,6 +3,33 @@
 All notable changes to go-fast-odf are recorded here, in the style of
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## v0.1.2 (2026-11-22)
+
+Every fixed bound that cuts what would appear in the output is now
+`limit.exceeded`, severity error, once per bound per part with a count,
+as the series' rule ("Bounded input") asks.
+
+- Metadata values cut at 64 KiB, and keywords and user-defined
+  properties past 256, are `limit.exceeded` on the document; they were
+  `odf.property_truncated`, severity warning, which is no longer raised
+  (`WarnPropertyTruncated` is kept, deprecated).
+- Names and labels cut at 512 bytes that were cut silently are now
+  reported, with the labels reported before, in one warning per part:
+  the metadata's language, generator, author names and property names;
+  the manifest's media types (on the document); the authors and dates of
+  comments and deletions; paragraph anchors; list and heading labels
+  from list styles; names of sheets, slides (and slide names taken from
+  their titles), tables, charts and chart classes, user fields, form
+  controls and their kinds, drop-down fields, named ranges and
+  validations; the member names of embedded documents; the IDs of
+  pictures missing from the package. A label is counted only where what
+  holds it is given. The message now reads "names and labels longer than
+  512 bytes were cut there"; "link addresses" now reads "addresses", and
+  includes the metadata's template address.
+- A picture held in a flat file in more than 64 MiB of base64 is
+  `limit.exceeded` on its part; it was `odf.unread_content`, which still
+  covers content of kinds this version does not read.
+
 ## v0.1.1 (2026-11-22)
 
 - Built on go-fast-core v0.1.1: a part or document keeps at most 1,000

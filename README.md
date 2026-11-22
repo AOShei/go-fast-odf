@@ -10,7 +10,7 @@ if err != nil { ... }
 fmt.Println(doc.Markdown())
 ```
 
-**Status: v0.1.1 (2026-11-22).** Text documents (`.odt`, with the template `.ott`, master documents `.odm` and `.otm`, and web pages `.oth`), spreadsheets (`.ods`, `.ots`), presentations (`.odp`, `.otp`), and the flat XML variants (`.fodt`, `.fods`, `.fodp`) are read. Password-protected packages are decrypted (AES-CBC with PBKDF2; ODF 1.4's AES-GCM with Argon2id; Blowfish CFB of ODF 1.0 and 1.1). Drawings, charts, formulas, images and databases as documents in their own right, and the OpenOffice.org 1 formats, give `ErrUnsupported`.
+**Status: v0.1.2 (2026-11-22).** Text documents (`.odt`, with the template `.ott`, master documents `.odm` and `.otm`, and web pages `.oth`), spreadsheets (`.ods`, `.ots`), presentations (`.odp`, `.otp`), and the flat XML variants (`.fodt`, `.fods`, `.fodp`) are read. Password-protected packages are decrypted (AES-CBC with PBKDF2; ODF 1.4's AES-GCM with Argon2id; Blowfish CFB of ODF 1.0 and 1.1). Drawings, charts, formulas, images and databases as documents in their own right, and the OpenOffice.org 1 formats, give `ErrUnsupported`.
 
 ## API
 
@@ -102,7 +102,7 @@ One part of kind `slide` per `draw:page`. `Name` is the text of the title frame 
 
 ## Flat files
 
-A flat file is one XML document (`office:document`) holding metadata, styles, master pages and body. It is read like a package whose streams are that document. Pictures held in it (`office:binary-data`) are decoded (up to 64 MiB of base64 each, charged to `MaxDecodedBytes`); their `Image.ID` is `inline-` and the first 16 hex digits of the SHA-256 of their bytes, so equal pictures have equal IDs; their MIME type and size come from decoding PNG, JPEG and GIF headers.
+A flat file is one XML document (`office:document`) holding metadata, styles, master pages and body. It is read like a package whose streams are that document. Pictures held in it (`office:binary-data`) are decoded (up to 64 MiB of base64 each, charged to `MaxDecodedBytes`; a larger one is `limit.exceeded`); their `Image.ID` is `inline-` and the first 16 hex digits of the SHA-256 of their bytes, so equal pictures have equal IDs; their MIME type and size come from decoding PNG, JPEG and GIF headers.
 
 ## What the file declares
 
@@ -136,11 +136,10 @@ Codes of this library:
 
 | Code | What happened |
 |---|---|
-| `odf.unread_content` | The document holds content this version does not read: an embedded formula or chart it could not read, an embedded object whose directory has no `content.xml`, a document held whole in a flat file, plug-ins and floating frames, pictures over 64 MiB held in a flat file. The message counts them |
+| `odf.unread_content` | The document holds content this version does not read: an embedded formula or chart it could not read, an embedded object whose directory has no `content.xml`, a document held whole in a flat file, plug-ins and floating frames. The message counts them |
 | `odf.region_split` | An area of a sheet with thinly spread cells was written as one table per run of cells in a row |
 | `odf.formula_no_value` | Cells of a sheet hold formulas with no stored result (no value attribute, no text), so they show nothing; one warning per sheet with the count (info). The formulas stay in `Table.Cells` |
 | `odf.part_damaged` | A supporting stream (manifest, styles, metadata) could not be read to its end; what was read is used. More styles or manifest entries than are read is `limit.exceeded` |
-| `odf.property_truncated` | A metadata value was cut at 64 KiB, or keywords or user-defined properties beyond 256 were left out |
 | `odf.control_characters_removed` | Control characters with no meaning as text were removed |
 
 ## Errors
@@ -163,7 +162,7 @@ The manifest sets the cost of a key, so it is capped: PBKDF2 at 10 million itera
 
 Every limit of `gofastcore.Options.Limits` applies. `MaxDecodedBytes` (default 2 GiB) is charged per byte read from the archive and shared with embedded documents. `MaxTextBytes` (default 256 MiB) is charged for every block (`BlockCost` plus its text and marker), every table cell (`CellCost` plus its text) and link targets; a paragraph stops growing when it would exceed what is left, so `text:s` with a huge count cannot expand past the budget. `Extractor.MaxCells` (default 20 million) bounds table cells; repetition attributes are capped at 2^20 rows or cells each (a sheet's rows at 2^24, so that every row keeps its address), tables of a text document at 16,384 columns, and sheets at 65,536 columns and 2^24 rows. The XML scanner refuses DTDs and bounds nesting depth and token size. A cut archive is read through the members' own headers (`input.repaired`).
 
-Fixed bounds that can leave content out say so with `limit.exceeded` (severity error), once per bound on the part concerned (on the document for content validations, styles and the manifest; a part not selected by `Options.Parts` is not read and says nothing), with what and how much was left out: table cells past those columns and rows; repetitions of a text table's row past 2^20; a cell's stored value and formula past 64 KiB; a formula's text and StarMath source past 64 KiB; a chart's table past 16,384 rows, 1,024 columns or 64 KiB in a cell; embedded documents past 4,096; form controls past 16,384, a list's options and a drop-down field's values past 4,096; content validations past 16,384; note citations, list and heading numbers and axis titles past 512 bytes; link addresses past 8 KiB; a list that continues one whose identifier or style name was not remembered (past 16,384 of each; its numbering restarts); styles past 65,536; manifest entries past 131,072. A picture whose bytes `MaxDecodedBytes` cannot hold is said the same way. Metadata values and pictures over 64 MiB in a flat file keep their own codes (`odf.property_truncated`, `odf.unread_content`).
+Fixed bounds that can leave content out say so with `limit.exceeded` (severity error), once per bound on the part concerned (on the document for content validations, styles and the manifest; a part not selected by `Options.Parts` is not read and says nothing), with what and how much was left out: table cells past those columns and rows; repetitions of a text table's row past 2^20; a cell's stored value and formula past 64 KiB; a formula's text and StarMath source past 64 KiB; a chart's table past 16,384 rows, 1,024 columns or 64 KiB in a cell; embedded documents past 4,096; form controls past 16,384, a list's options and a drop-down field's values past 4,096; content validations past 16,384; names and labels that reach the output past 512 bytes (note citations, list and heading numbers, axis titles, chart classes, anchors, authors and dates of comments and deletions, names of sheets, slides, tables, charts, fields, controls, named ranges and validations, embedded documents' member names, manifest media types, the language, generator and author names and property names of the metadata), counted only where what holds them is given; addresses past 8 KiB (links, linked pictures, the metadata's template); metadata values past 64 KiB, keywords and user-defined properties past 256 (on the document); pictures held in a flat file in more than 64 MiB of base64; a list that continues one whose identifier or style name was not remembered (past 16,384 of each; its numbering restarts); styles past 65,536; manifest entries past 131,072. A picture whose bytes `MaxDecodedBytes` cannot hold is said the same way. No other code is used for these cuts: `odf.property_truncated` is no longer raised, and `odf.unread_content` no longer covers large pictures.
 
 ## Corpus test
 
