@@ -51,6 +51,10 @@ type Result struct {
 	// "presentation", or another this package does not read (Parts is
 	// then empty), or "" if the stream has no body.
 	Kind string
+	// Failed: content.xml could not be read as far as its body (it is
+	// damaged, cut short or not XML), so what kind of document it holds
+	// is not known.
+	Failed bool
 	// Parts are the body of a text document, the sheets of a spreadsheet,
 	// the slides of a presentation. Stored is the stored part, or nil.
 	Parts  []gofastcore.Part
@@ -89,6 +93,12 @@ type reader struct {
 
 	maxCells int64
 	cells    int64
+
+	hits []capHit // what fixed bounds left out of the part being read
+	// heldHits, while a presentation is read, keeps what bounds left out of
+	// each slide (by number) until its master's content is added, so
+	// that both are said in one warning per bound.
+	heldHits map[int][]capHit
 
 	deletions map[string]*deletion
 	usedDel   map[string]bool
@@ -156,6 +166,7 @@ func Read(ctx context.Context, pkg *odpkg.Package, set *style.Set, opts *gofastc
 			}
 		}
 	}
+	res.Failed = res.Kind == "" && (serr != nil || r.s.Err() != nil)
 	switch res.Kind {
 	case "spreadsheet":
 		res.Parts = r.spreadsheet(serr)
@@ -174,6 +185,7 @@ func Read(ctx context.Context, pkg *odpkg.Package, set *style.Set, opts *gofastc
 			Message: fmt.Sprintf("%d control characters removed from the text", r.removed)})
 	}
 	r.unplacedControls()
+	r.sayLost(nil, &res.Warnings)
 	res.Children = r.children
 	if len(r.userVars) > 0 {
 		// What the file keeps and shows nowhere, with no reason: it is
@@ -253,7 +265,16 @@ func (r *reader) finish(part *gofastcore.Part, what string) {
 		part.Warn(gofastcore.SeverityInfo, gofastcore.WarnHeadingLevelClamped, fmt.Sprintf("%d headings deeper than level 6", r.clamped))
 		r.clamped = 0
 	}
-	if len(part.Blocks) == 0 && len(part.Warnings) == 0 {
+	held := false
+	if r.heldHits != nil {
+		if own := r.takeHits(); len(own) > 0 {
+			r.heldHits[part.Number] = own
+			held = true
+		}
+	} else {
+		r.sayLost(part, nil)
+	}
+	if len(part.Blocks) == 0 && len(part.Warnings) == 0 && !held {
 		part.Warn(gofastcore.SeverityWarning, gofastcore.WarnPartNoText, "the "+what+" has no text and no images")
 	}
 	part.Finish()

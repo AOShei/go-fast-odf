@@ -101,6 +101,7 @@ type Package struct {
 	manifest  map[string]Entry
 	mime      string // what the mimetype member says, or the manifest's root entry
 	damaged   bool   // the manifest could not be read to its end
+	full      bool   // the manifest has more entries than are read
 	password  string
 	ctx       context.Context // stops key derivation; nil for none
 	kdfWork   atomic.Int64    // PBKDF2 iterations spent
@@ -110,9 +111,12 @@ type Package struct {
 	keys      map[string][]byte // derived keys, by member
 }
 
-// maxManifestEntries bounds the entries read from a manifest. Each costs
+// MaxManifestEntries bounds the entries read from a manifest. Each costs
 // memory, and a real package has one per member.
-const maxManifestEntries = 1 << 17
+const MaxManifestEntries = 1 << 17
+
+// errManifestFull: the manifest has more than MaxManifestEntries entries.
+var errManifestFull = errors.New("odpkg: manifest has more entries than are read")
 
 // Open reads the archive's directory, the mimetype member and the manifest.
 func Open(r io.ReaderAt, size int64, lim Limits) (*Package, error) {
@@ -172,10 +176,14 @@ func Open(r io.ReaderAt, size int64, lim Limits) (*Package, error) {
 	}
 	if p.Has(manifestName) {
 		if err := p.readManifest(); err != nil {
-			if errors.Is(err, ErrBudget) {
+			switch {
+			case errors.Is(err, ErrBudget):
 				return nil, err
+			case errors.Is(err, errManifestFull):
+				p.full = true
+			default:
+				p.damaged = true
 			}
-			p.damaged = true
 		}
 	}
 	if p.mime == "" {
@@ -285,6 +293,11 @@ func (p *Package) Ambiguous() int { return p.ambiguous }
 
 // ManifestDamaged reports that the manifest could not be read to its end.
 func (p *Package) ManifestDamaged() bool { return p.damaged }
+
+// ManifestFull reports whether the manifest has more entries than are
+// read (MaxManifestEntries); what the rest say of their members is not
+// known.
+func (p *Package) ManifestFull() bool { return p.full }
 
 // Has reports whether the package has the named member.
 func (p *Package) Has(name string) bool {
@@ -486,8 +499,8 @@ func (p *Package) readManifest() error {
 			}
 			switch string(s.Local()) {
 			case "file-entry":
-				if len(p.manifest) >= maxManifestEntries {
-					return fmt.Errorf("%w: manifest has more than %d entries", ErrDamaged, maxManifestEntries)
+				if len(p.manifest) >= MaxManifestEntries {
+					return errManifestFull
 				}
 				full := attr("full-path")
 				cur, enc = full, nil

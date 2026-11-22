@@ -1,6 +1,7 @@
 package odt
 
 import (
+	"hash/fnv"
 	"strconv"
 	"strings"
 
@@ -43,18 +44,77 @@ func (c *counters) restart(level, start int) {
 // listState carries numbering from one list to the next that continues
 // it.
 type listState struct {
-	byID    map[string]*counters
-	byStyle map[string]*counters
+	byID    listMap
+	byStyle listMap
 	last    *counters
 }
 
 func (l *listState) init() {
-	l.byID = map[string]*counters{}
-	l.byStyle = map[string]*counters{}
+	l.byID.init()
+	l.byStyle.init()
 }
 
-// maxListIDs bounds the list identifiers remembered.
+// maxListIDs bounds the list identifiers, and the list style names,
+// remembered.
 const maxListIDs = 1 << 14
+
+// listMap holds the counters list identifiers or style names stand for,
+// at most maxListIDs of them. Of the names not kept because it was full
+// it keeps a hash (as many again), so that a list that continues one is
+// known to have lost its numbering, and one that names a list there never
+// was is not taken for one.
+type listMap struct {
+	m         map[string]*counters
+	forgotten map[uint64]bool // hash -> missed and counted already
+}
+
+func (l *listMap) init() {
+	l.m = map[string]*counters{}
+	l.forgotten = map[uint64]bool{}
+}
+
+// get returns the counters key stands for, or nil; missed reports that
+// key was not kept because the map was full (or, past what is kept of
+// the names not kept, may not have been). A name not kept is missed
+// once: what continues it after is the same list, counted already.
+func (l *listMap) get(key string) (c *counters, missed bool) {
+	if c := l.m[key]; c != nil {
+		return c, false
+	}
+	if len(l.m) < maxListIDs {
+		return nil, false
+	}
+	h := hashKey(key)
+	said, ok := l.forgotten[h]
+	switch {
+	case ok && !said:
+		l.forgotten[h] = true
+		return nil, true
+	case ok:
+		return nil, false
+	}
+	return nil, len(l.forgotten) >= maxListIDs
+}
+
+// set records the counters key stands for. A key already there is
+// updated; a new one past the bound is not kept, and its hash is.
+func (l *listMap) set(key string, c *counters) {
+	if _, ok := l.m[key]; ok || len(l.m) < maxListIDs {
+		l.m[key] = c
+		return
+	}
+	if h := hashKey(key); len(l.forgotten) < maxListIDs {
+		if _, ok := l.forgotten[h]; !ok {
+			l.forgotten[h] = false // not yet missed
+		}
+	}
+}
+
+func hashKey(s string) uint64 {
+	h := fnv.New64a()
+	h.Write([]byte(s))
+	return h.Sum64()
+}
 
 // listCtx is a text:list being read.
 type listCtx struct {
@@ -196,24 +256,34 @@ func (r *reader) list(c ctxt, dst *[]gofastcore.Block) {
 		l.name = name
 		l.style = r.set.List(r.sc, name)
 		cont := r.attr(ns.Text, "continue-list")
+		var byID *counters
+		missed := false
+		if cont != "" {
+			byID, missed = r.lists.byID.get(cont)
+		}
 		switch {
-		case cont != "" && r.lists.byID[cont] != nil:
-			l.count = r.lists.byID[cont]
+		case byID != nil:
+			l.count = byID
 		case r.attr(ns.Text, "continue-numbering") == "true":
-			l.count = r.lists.byStyle[name]
+			var lost bool
+			l.count, lost = r.lists.byStyle.get(name)
+			missed = missed || lost
 			if l.count == nil {
 				l.count = r.lists.last
 			}
 		}
+		if missed {
+			// The list it continues was not remembered: its numbering
+			// starts again (or goes on from the list before).
+			r.lost(capListIDs, 1)
+		}
 		if l.count == nil {
 			l.count = &counters{}
 		}
-		if id := r.attr(xmlscan.SpaceXML, "id"); id != "" && len(r.lists.byID) < maxListIDs {
-			r.lists.byID[id] = l.count
+		if id := r.attr(xmlscan.SpaceXML, "id"); id != "" {
+			r.lists.byID.set(id, l.count)
 		}
-		if len(r.lists.byStyle) < maxListIDs {
-			r.lists.byStyle[name] = l.count
-		}
+		r.lists.byStyle.set(name, l.count)
 		r.lists.last = l.count
 	}
 	depth := s.Depth()
@@ -264,7 +334,7 @@ func (r *reader) item(c ctxt, l *listCtx, it *itemCtx, dst *[]gofastcore.Block) 
 		switch {
 		case space == ns.Text && local == "number":
 			v, _ := clean.String(s.AppendText(nil), clean.Prose)
-			given = clean.Label(v)
+			given = r.label(v)
 		case space == ns.Text && (local == "p" || local == "h"):
 			var use *itemCtx
 			if first {
@@ -298,11 +368,17 @@ func (r *reader) numberedParagraph(c ctxt, dst *[]gofastcore.Block) {
 		level = min(n, 10)
 	}
 	id := r.attr(ns.Text, "list-id")
-	count := r.lists.byID[id]
+	var count *counters
+	if id != "" {
+		var missed bool
+		if count, missed = r.lists.byID.get(id); missed {
+			r.lost(capListIDs, 1)
+		}
+	}
 	if count == nil {
 		count = &counters{}
-		if id != "" && len(r.lists.byID) < maxListIDs {
-			r.lists.byID[id] = count
+		if id != "" {
+			r.lists.byID.set(id, count)
 		}
 	}
 	l := &listCtx{style: r.set.List(r.sc, name), name: name, depth: level, count: count}
@@ -323,7 +399,7 @@ func (r *reader) numberedParagraph(c ctxt, dst *[]gofastcore.Block) {
 		switch {
 		case s.Space() == ns.Text && string(s.Local()) == "number":
 			v, _ := clean.String(s.AppendText(nil), clean.Prose)
-			given = clean.Label(v)
+			given = r.label(v)
 		case s.Space() == ns.Text && (string(s.Local()) == "p" || string(s.Local()) == "h"):
 			if given != "" {
 				it.marker()

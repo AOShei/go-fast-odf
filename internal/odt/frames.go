@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"image"
 	_ "image/gif" // pixel sizes of pictures
 	_ "image/jpeg"
@@ -194,7 +195,7 @@ func (r *reader) imageAt(c ctxt, alt string, dst *[]gofastcore.Block) {
 	switch {
 	case href != "" && odpkg.IsExternal(href):
 		r.external++
-		b.Attrs = map[string]string{"href": clean.Address(href)}
+		b.Attrs = map[string]string{"href": r.address(href)}
 	case href != "":
 		name := odpkg.Resolve(href)
 		if name == "" || !r.pkg.Has(name) {
@@ -207,6 +208,8 @@ func (r *reader) imageAt(c ctxt, alt string, dst *[]gofastcore.Block) {
 			if data, err := r.readMember(name); err == nil {
 				b.Image.Data = data
 				r.dataSent[name] = true
+			} else if errors.Is(err, odpkg.ErrBudget) {
+				r.lost(capPictures, 1)
 			}
 		}
 	case len(inline) > 0:
@@ -254,10 +257,14 @@ func (r *reader) binaryData() []byte {
 			over = len(enc) > maxInline
 		}
 	}
-	if over || len(enc) == 0 || !r.pkg.Charge(int64(len(enc))) {
+	if over || len(enc) == 0 {
 		if over {
 			r.addUnread("pictures larger than 64 MiB held in the file")
 		}
+		return nil
+	}
+	if !r.pkg.Charge(int64(len(enc))) {
+		r.lost(capPictures, 1)
 		return nil
 	}
 	raw := bytes.TrimRight(enc, "=")

@@ -211,7 +211,7 @@ func (r *reader) inlineText(p *para, ru run, local string) {
 		}
 		inner := ru
 		if r.opts.Spans {
-			inner.href = clean.Address(href)
+			inner.href = r.address(href)
 			if inner.href != "" && !r.budget.Take(len(inner.href)) {
 				r.stop(textCut)
 				return
@@ -236,7 +236,7 @@ func (r *reader) inlineText(p *para, ru run, local string) {
 		// computed it.
 		v := s.AppendText(nil)
 		p.marker, _ = clean.String(v, clean.Prose)
-		p.marker = clean.Label(p.marker)
+		p.marker = r.label(p.marker)
 		p.hasMarker = p.marker != ""
 	case "note":
 		r.note(p, ru)
@@ -348,8 +348,12 @@ func (r *reader) dropDown(p *para, ru run) {
 		case xmlscan.Text:
 			r.text(p, &ru, s.Text())
 		case xmlscan.Start:
-			if s.Space() == ns.Text && string(s.Local()) == "label" && len(values) < 1<<12 {
-				if v := r.attrValue("value"); v != "" {
+			if s.Space() == ns.Text && string(s.Local()) == "label" {
+				if len(values) >= maxOptions {
+					if v, _ := s.Attr(ns.Text, "value"); len(v) > 0 {
+						r.lost(capDropDown, 1)
+					}
+				} else if v := r.attrValue("value"); v != "" {
 					values = append(values, v)
 				}
 			}

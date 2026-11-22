@@ -18,8 +18,10 @@
 // Without a password an encrypted file gives ErrPasswordRequired.
 //
 // Drawings (odg, otg, fodg), charts (odc), formulas (odf), images (odi)
-// and databases (odb) as documents in their own right, and OpenOffice.org
-// 1 text documents (sxw), give ErrUnsupported.
+// and databases (odb) as documents in their own right, and the
+// OpenOffice.org 1 formats (sxw, sxc, sxi, sxd, sxm, sxg and the templates
+// stw, stc, sti, std), give ErrUnsupported, as does a file whose media
+// type is not OpenDocument's and whose content holds no OpenDocument body.
 //
 // # Use
 //
