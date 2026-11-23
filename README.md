@@ -12,6 +12,20 @@ fmt.Println(doc.Markdown())
 
 **Status: v0.2.0 (2026-11-23).** Text documents (`.odt`, with the template `.ott`, master documents `.odm` and `.otm`, and web pages `.oth`), spreadsheets (`.ods`, `.ots`), presentations (`.odp`, `.otp`), and the flat XML variants (`.fodt`, `.fods`, `.fodp`) are read. Password-protected packages are decrypted (AES-CBC with PBKDF2; ODF 1.4's AES-GCM with Argon2id; Blowfish CFB of ODF 1.0 and 1.1). Drawings, charts, formulas, images and databases as documents in their own right, and the OpenOffice.org 1 formats, give `ErrUnsupported`.
 
+**Speed and memory.** Against the Python and Rust tools in use, on files from Common Crawl, see [`bench/`](bench/README.md). Go's garbage collector can be given more memory for less work with `GOGC` in the environment (or `debug.SetGCPercent` in a program); the library and its command keep Go's default, 100. Each file read from disk as a pipeline does (wall time, peak memory):
+
+| Files | `GOGC` | One worker | 24 workers |
+|---|---|---|---|
+| 2,457 ODT (197 MB) | 100 (default) | 2.24 s, 35 MB | 0.38 s, 120 MB |
+| | 200 | 2.08 s, 58 MB | 0.29 s, 231 MB |
+| | 400 | 2.00 s, 86 MB | 0.27 s, 472 MB |
+| 1,265 ODS (87 MB) | 100 (default) | 5.54 s, 232 MB | 0.98 s, 402 MB |
+| | 200 | 5.33 s, 344 MB | 0.92 s, 456 MB |
+| | 400 | 5.19 s, 344 MB | 0.84 s, 764 MB |
+| 61 ODP (61 MB) | 100 (default) | 0.27 s, 30 MB | 0.05 s, 120 MB |
+| | 200 | 0.27 s, 35 MB | 0.05 s, 130 MB |
+| | 400 | 0.25 s, 51 MB | 0.05 s, 156 MB |
+
 ## API
 
 - `Extract(ctx, r io.ReaderAt, size, opts)`, `ExtractFile(ctx, path, opts)`, `ExtractBytes(ctx, data, opts)`.
