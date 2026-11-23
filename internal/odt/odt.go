@@ -124,6 +124,12 @@ type reader struct {
 
 	cur  *para // the paragraph being read, if any
 	held int   // bytes held by the paragraphs cur stands in
+	// Paragraphs read and done with, their buffers kept for the next;
+	// one read within another takes its own.
+	freeParas []*para
+
+	rowCells   []sheetCell        // sheetRow's buffer of a row's cells
+	cellBlocks []gofastcore.Block // sheetRow's buffer of a cell's blocks
 
 	seenObjects  map[string]bool
 	children     []*gofastcore.Document
@@ -591,7 +597,8 @@ func (r *reader) paragraph(c ctxt, heading bool, item *itemCtx, dst *[]gofastcor
 			anchor = cutLabel(r.attr(ns.Text, "id"), &cuts)
 		}
 	}
-	p := &para{space: true}
+	p := r.newPara()
+	defer r.freePara(p)
 	// A paragraph in a paragraph (a text box anchored in it, a note) has
 	// a buffer of its own while the outer one is held: both count.
 	outer, held := r.cur, r.held
@@ -668,6 +675,25 @@ func (r *reader) paragraph(c ctxt, heading bool, item *itemCtx, dst *[]gofastcor
 	if p.cut {
 		r.stop(textCut)
 	}
+}
+
+// newPara gives an empty paragraph, from the free list if it has one.
+func (r *reader) newPara() *para {
+	n := len(r.freeParas)
+	if n == 0 {
+		return &para{space: true}
+	}
+	p := r.freeParas[n-1]
+	r.freeParas = r.freeParas[:n-1]
+	return p
+}
+
+// freePara empties a paragraph whose text and blocks were given (copied)
+// and puts it on the free list.
+func (r *reader) freePara(p *para) {
+	clear(p.after)
+	*p = para{buf: p.buf[:0], spans: p.spans[:0], after: p.after[:0], space: true}
+	r.freeParas = append(r.freeParas, p)
 }
 
 // thematicBreak emits a break where the file declares one. ODF has no

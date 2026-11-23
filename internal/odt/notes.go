@@ -30,6 +30,16 @@ type deletion struct {
 // as: a table cell's text is all it has, and a break inside a comment,
 // a speaker's note or a tracked deletion is not a break in the document.
 func (r *reader) flatten(blocks []gofastcore.Block, keepBreaks bool) (text string, spans []gofastcore.Span, all gofastcore.Display, rest []gofastcore.Block) {
+	if len(blocks) == 1 {
+		// One paragraph with no label and no reasons of its own (most
+		// cells): its text as it is.
+		b := &blocks[0]
+		if b.Table == nil && b.Image == nil && b.Kind != gofastcore.KindNote && b.Kind != gofastcore.KindFootnote &&
+			!(b.Kind == gofastcore.KindThematicBreak && keepBreaks) && b.Marker == "" && len(b.Spans) == 0 && b.DisplayWhole() == 0 {
+			r.budget.Return(cost(b))
+			return b.Text, nil, 0, nil
+		}
+	}
 	var buf []byte
 	var collected []gofastcore.Span
 	for i := range blocks {

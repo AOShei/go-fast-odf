@@ -41,6 +41,9 @@ func repeat(s string) int { return int(min(asked(s), maxRepeat)) }
 // asked reads a repetition attribute as the file gives it: at least 1,
 // and 1 for a value that is not a number.
 func asked(s string) int64 {
+	if s == "" {
+		return 1 // absent, as most are: no error to make
+	}
 	n, err := strconv.ParseInt(strings.TrimSpace(s), 10, 64)
 	if err != nil || n < 1 {
 		return 1
