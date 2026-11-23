@@ -3,7 +3,10 @@
 All notable changes to go-fast-odf are recorded here, in the style of
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## Unreleased
+## v0.2.1 (2026-11-24)
+
+- **go-fast-core v0.1.4** (was v0.1.2): `Document.Text` and `Markdown`
+  allocate their result once. The output is unchanged.
 
 ### Faster
 
