@@ -13,6 +13,7 @@ package style
 import (
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/AOShei/go-fast-odf/internal/ns"
 	"github.com/AOShei/go-fast-odf/internal/odpkg"
@@ -154,7 +155,36 @@ type Set struct {
 	Truncated    bool // more styles than MaxStyles; the rest were left out
 	Damaged      bool // a stream's styles could not be read to their end
 	Scripts      int  // non-empty office:scripts or office:event-listeners met
+
+	// The styles and list styles are made in slabs, kept with the set when
+	// it is reused (see Get). A slab is never grown in place, so that a
+	// pointer to one of its styles stays valid.
+	styles   slab[Style]
+	lists    slab[ListStyle]
+	chainBuf []*Style
 }
+
+// slab hands out zeroed values from chunks that are kept and reused.
+type slab[T any] struct {
+	chunks [][]T
+	n      int // values handed out
+}
+
+const slabChunk = 64
+
+func (s *slab[T]) new() *T {
+	c, i := s.n/slabChunk, s.n%slabChunk
+	if c == len(s.chunks) {
+		s.chunks = append(s.chunks, make([]T, slabChunk))
+	}
+	s.n++
+	v := &s.chunks[c][i]
+	var zero T
+	*v = zero
+	return v
+}
+
+func (s *slab[T]) reset() { s.n = 0 }
 
 type cacheKey struct {
 	scope  Scope
@@ -168,6 +198,49 @@ const MaxStyles = 1 << 16
 
 // maxChain bounds the length of an inheritance chain.
 const maxChain = 32
+
+// Sets are reused from one document to the next (Get and Release): their
+// maps, emptied, keep their room, and their slabs their chunks. Go empties
+// the pool as it collects garbage, so what it holds is bounded by what the
+// workers use at once.
+var pool sync.Pool
+
+// maxPooled bounds the styles and cached resolutions of a set that is
+// reused: a set that grew larger is left to be collected, since an
+// emptied map keeps the room it grew to.
+const maxPooled = 4096
+
+// Get returns an empty set, reused if one is free. Release gives it back.
+func Get() *Set {
+	if set, ok := pool.Get().(*Set); ok {
+		return set
+	}
+	return New()
+}
+
+// Release empties the set and makes it free for Get. Nothing may use the
+// set, or anything it returned by pointer (a *ListStyle), after.
+func (set *Set) Release() {
+	if set.count > maxPooled || len(set.cache) > maxPooled || len(set.hiddenLayers) > maxPooled {
+		return
+	}
+	clear(set.common.styles)
+	clear(set.common.lists)
+	for i := range set.auto {
+		clear(set.auto[i].styles)
+		clear(set.auto[i].lists)
+	}
+	clear(set.defaults)
+	clear(set.hiddenLayers)
+	clear(set.cache)
+	set.outline = nil
+	set.count = 0
+	set.Truncated, set.Damaged, set.Scripts = false, false, 0
+	set.styles.reset()
+	set.lists.reset()
+	set.chainBuf = set.chainBuf[:0]
+	pool.Put(set)
+}
 
 // New returns an empty set.
 func New() *Set {
@@ -246,7 +319,8 @@ func (set *Set) Read(s *xmlscan.Scanner, sc Scope) error {
 			switch local {
 			case "style", "default-style":
 				family := string(attr(s, ns.Style, "family"))
-				st := &Style{family: family, outline: -1, name: string(attr(s, ns.Style, "name"))}
+				st := set.styles.new()
+				*st = Style{family: family, outline: -1, name: string(attr(s, ns.Style, "name"))}
 				st.parent = string(attr(s, ns.Style, "parent-style-name"))
 				st.master = string(attr(s, ns.Style, "master-page-name"))
 				if v, ok := s.Attr(ns.Style, "default-outline-level"); ok {
@@ -314,7 +388,7 @@ func (set *Set) Read(s *xmlscan.Scanner, sc Scope) error {
 					continue
 				}
 				set.count++
-				list = &ListStyle{}
+				list = set.lists.new()
 				if local == "outline-style" {
 					set.outline = list
 				} else {
@@ -504,11 +578,12 @@ func (set *Set) lookup(sc Scope, family, name string) *Style {
 
 // chain returns the style named and its ancestors, nearest first, then the
 // family's default style.
+//
+// The slice returned is the set's own, valid until the next call.
 func (set *Set) chain(sc Scope, family, name string) []*Style {
-	var out []*Style
-	seen := map[string]bool{}
-	for name != "" && len(out) < maxChain && !seen[name] {
-		seen[name] = true
+	out := set.chainBuf[:0]
+	defer func() { set.chainBuf = out[:0] }()
+	for name != "" && len(out) < maxChain && !seen(out, name) {
 		st := set.lookup(sc, family, name)
 		if st == nil {
 			break
@@ -520,6 +595,17 @@ func (set *Set) chain(sc Scope, family, name string) []*Style {
 		out = append(out, d)
 	}
 	return out
+}
+
+// seen reports whether a style of the name is in the chain so far: a
+// parent named again closes a cycle.
+func seen(chain []*Style, name string) bool {
+	for _, st := range chain {
+		if st.name == name {
+			return true
+		}
+	}
+	return false
 }
 
 // Para returns the resolved paragraph style of the given name (family
