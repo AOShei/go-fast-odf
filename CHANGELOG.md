@@ -7,6 +7,15 @@ All notable changes to go-fast-odf are recorded here, in the style of
 
 ### Faster
 
+- **A document's styles are reused for the next.** The style set's
+  maps, emptied, keep their room; its styles and list styles come from
+  slabs kept with it; the chain of a style's parents is walked without a
+  map. On 2,457 ODT files, 981 MB allocated becomes 637 MB, and 24
+  workers take 0.28–0.30 s instead of 0.34–0.36 s, for a peak of 140–172
+  MB instead of 117–132. One worker: 2.05–2.15 s instead of 2.18–2.24 s.
+  ODS allocates 2% less and ODP 15% less. JSON and text are
+  byte-identical on 3,783 ODT, ODS and ODP files.
+
 - **Spreadsheets allocate a quarter of what they did.** On 1,265 ODS
   files from Common Crawl (90 MB), reading every file allocates 3.1 GB
   instead of 11.3 GB, one worker takes 4.8 s instead of 7.6 s, and 24
