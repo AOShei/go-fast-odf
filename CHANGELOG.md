@@ -7,6 +7,12 @@ All notable changes to go-fast-odf are recorded here, in the style of
 
 ### Faster
 
+- **An absent number attribute costs nothing.** A number read from an
+  attribute that is not there (a run of spaces with no count, a list
+  level with no start value) made an error value each time. On 2,457 ODT
+  files, 591 MB allocated becomes 558 MB; ODS 2,578 to 2,540 MB, ODP 66
+  to 62 MB. JSON and text are byte-identical on 3,783 files.
+
 - **A document's styles are reused for the next.** The style set's
   maps, emptied, keep their room; its styles and list styles come from
   slabs kept with it; the chain of a style's parents is walked without a

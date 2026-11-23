@@ -16,6 +16,7 @@ import (
 	"sync"
 
 	"github.com/AOShei/go-fast-odf/internal/ns"
+	"github.com/AOShei/go-fast-odf/internal/num"
 	"github.com/AOShei/go-fast-odf/internal/odpkg"
 	"github.com/AOShei/go-fast-odf/internal/xmlscan"
 )
@@ -325,7 +326,7 @@ func (set *Set) Read(s *xmlscan.Scanner, sc Scope) error {
 				st.master = string(attr(s, ns.Style, "master-page-name"))
 				if v, ok := s.Attr(ns.Style, "default-outline-level"); ok {
 					st.outline = 0
-					if n, err := strconv.Atoi(strings.TrimSpace(string(v))); err == nil && n > 0 {
+					if n, err := num.Atoi(strings.TrimSpace(string(v))); err == nil && n > 0 {
 						st.outline = min(n, 10)
 					}
 				}
@@ -398,7 +399,7 @@ func (set *Set) Read(s *xmlscan.Scanner, sc Scope) error {
 				if list == nil {
 					continue
 				}
-				lvl, _ := strconv.Atoi(strings.TrimSpace(string(attr(s, ns.Text, "level"))))
+				lvl, _ := num.Atoi(strings.TrimSpace(string(attr(s, ns.Text, "level"))))
 				if lvl < 1 || lvl > 10 {
 					continue
 				}
@@ -417,11 +418,11 @@ func (set *Set) Read(s *xmlscan.Scanner, sc Scope) error {
 				l.Suffix = string(attr(s, ns.Style, "num-suffix"))
 				l.LetterSync = string(attr(s, ns.Style, "num-letter-sync")) == "true"
 				l.Start = 1
-				if n, err := strconv.Atoi(strings.TrimSpace(string(attr(s, ns.Text, "start-value")))); err == nil && n >= 0 {
+				if n, err := num.Atoi(strings.TrimSpace(string(attr(s, ns.Text, "start-value")))); err == nil && n >= 0 {
 					l.Start = n
 				}
 				l.DisplayLevels = 1
-				if n, err := strconv.Atoi(strings.TrimSpace(string(attr(s, ns.Text, "display-levels")))); err == nil && n > 1 {
+				if n, err := num.Atoi(strings.TrimSpace(string(attr(s, ns.Text, "display-levels")))); err == nil && n > 1 {
 					l.DisplayLevels = min(n, 10)
 				}
 			}
