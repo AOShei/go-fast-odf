@@ -323,6 +323,7 @@ var flatStreams = map[string]bool{"content.xml": true, "styles.xml": true, "meta
 // they read from their stream.
 func OpenFlat(r io.ReaderAt, size int64, lim Limits) (*Package, error) {
 	var s xmlscan.Scanner
+	defer s.Release()
 	s.Reset(io.NewSectionReader(r, 0, size), &xmlscan.Options{Spaces: ns.Spaces, BufferSize: 4096})
 	for {
 		switch s.Next() {
@@ -481,6 +482,7 @@ func (p *Package) Scan(name string, s *xmlscan.Scanner) (io.Closer, error) {
 
 func (p *Package) readManifest() error {
 	var s xmlscan.Scanner
+	defer s.Release()
 	c, err := p.Scan(manifestName, &s)
 	if err != nil {
 		return err

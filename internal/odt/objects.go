@@ -63,6 +63,7 @@ func (r *reader) object(c ctxt, name string, dst *[]gofastcore.Block) bool {
 		if err == nil {
 			done, body := r.subDocument(&sub, c, name, dst)
 			closer.Close()
+			sub.Release()
 			if done {
 				return true
 			}

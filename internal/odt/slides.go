@@ -243,6 +243,7 @@ func (r *reader) addMasters(parts []gofastcore.Part, uses []slideUse) {
 	saved := r.s
 	r.s = xmlscan.Scanner{}
 	masters, lostIn := r.slideMasters(&parts[len(parts)-1], want)
+	r.s.Release()
 	r.s = saved
 	costs := map[string]int{}
 	for name, blocks := range masters {

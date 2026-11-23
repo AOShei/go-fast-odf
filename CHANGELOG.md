@@ -18,6 +18,13 @@ All notable changes to go-fast-odf are recorded here, in the style of
   as they are read. ODT allocates 10% less. The JSON and text are
   byte-identical on 3,783 ODT, ODS and ODP files, with default options
   and with cells and spans asked for.
+- **XML windows are reused across documents.** A stream's scanner gives
+  its window (4 to 64 KiB) back when the stream is read, for the next
+  stream of this document or another, instead of each stream allocating
+  one. ODT allocates 22% less (1,260 to 981 MB on 2,457 files); 24
+  workers on ODT take 0.33 s instead of 0.37 s. A scanner reset for a new
+  stream no longer shows the last stream's token until it reads one.
+  Output byte-identical on the 3,783 files.
 
 ## v0.2.0 (2026-11-23)
 

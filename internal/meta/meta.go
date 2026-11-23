@@ -50,6 +50,7 @@ func Read(pkg *odpkg.Package) Result {
 		return res
 	}
 	var s xmlscan.Scanner
+	defer s.Release()
 	c, err := pkg.Scan("meta.xml", &s)
 	if err != nil {
 		res.Damaged = !errors.Is(err, odpkg.ErrEncrypted)

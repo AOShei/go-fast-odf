@@ -188,6 +188,7 @@ func (set *Set) ReadStyles(pkg *odpkg.Package) error {
 		return nil
 	}
 	var s xmlscan.Scanner
+	defer s.Release()
 	c, err := pkg.Scan("styles.xml", &s)
 	if err != nil {
 		set.Damaged = true
