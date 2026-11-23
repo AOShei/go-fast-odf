@@ -348,7 +348,10 @@ func (e *Extractor) Extract(ctx context.Context, r io.ReaderAt, size int64, opts
 		external++
 	}
 
-	set := style.New()
+	// The styles are read and used only while the document is: nothing
+	// in it refers to them.
+	set := style.Get()
+	defer set.Release()
 	if err := set.ReadStyles(pkg); err != nil {
 		if errors.Is(err, odpkg.ErrBudget) {
 			warn(gofastcore.SeverityError, gofastcore.WarnLimitExceeded, "decompressed size limit reached while reading styles.xml")
