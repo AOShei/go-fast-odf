@@ -23,6 +23,7 @@ import (
 
 	"github.com/AOShei/go-fast-odf/internal/clean"
 	"github.com/AOShei/go-fast-odf/internal/ns"
+	number "github.com/AOShei/go-fast-odf/internal/num"
 	"github.com/AOShei/go-fast-odf/internal/xmlscan"
 )
 
@@ -495,7 +496,7 @@ func (p *Package) readManifest() error {
 		return string(v)
 	}
 	num := func(local string) int {
-		n, _ := strconv.Atoi(strings.TrimSpace(attr(local)))
+		n, _ := number.Atoi(strings.TrimSpace(attr(local)))
 		return n
 	}
 	for {
@@ -514,7 +515,7 @@ func (p *Package) readManifest() error {
 				if full != "/" {
 					cur = Canonical(full)
 				}
-				size, _ := strconv.ParseInt(strings.TrimSpace(attr("size")), 10, 64)
+				size, _ := number.ParseInt(strings.TrimSpace(attr("size")), 10, 64)
 				mt, cut := clean.LabelCut(attr("media-type"))
 				if cut {
 					p.cutLabels++
@@ -544,7 +545,7 @@ func (p *Package) readManifest() error {
 						if !ok {
 							v, _ = s.Attr(ns.LOExt, local)
 						}
-						n, _ := strconv.Atoi(strings.TrimSpace(string(v)))
+						n, _ := number.Atoi(strings.TrimSpace(string(v)))
 						return n
 					}
 					enc.ArgonIterates, enc.ArgonMemory, enc.ArgonLanes = argon("argon2-iterations"), argon("argon2-memory"), argon("argon2-lanes")

@@ -8,6 +8,7 @@ import (
 	"github.com/AOShei/go-fast-core"
 	"github.com/AOShei/go-fast-odf/internal/clean"
 	"github.com/AOShei/go-fast-odf/internal/ns"
+	"github.com/AOShei/go-fast-odf/internal/num"
 	"github.com/AOShei/go-fast-odf/internal/style"
 	"github.com/AOShei/go-fast-odf/internal/xmlscan"
 )
@@ -304,7 +305,7 @@ func (r *reader) list(c ctxt, dst *[]gofastcore.Block) {
 		switch string(s.Local()) {
 		case "list-item":
 			start := -1
-			if n, err := strconv.Atoi(strings.TrimSpace(r.attr(ns.Text, "start-value"))); err == nil && n >= 0 {
+			if n, err := num.Atoi(strings.TrimSpace(r.attr(ns.Text, "start-value"))); err == nil && n >= 0 {
 				start = n
 			}
 			r.item(c, l, &itemCtx{list: l, depth: l.depth, start: start}, dst)
@@ -367,7 +368,7 @@ func (r *reader) numberedParagraph(c ctxt, dst *[]gofastcore.Block) {
 	s := &r.s
 	name := r.attr(ns.Text, "style-name")
 	level := 1
-	if n, err := strconv.Atoi(strings.TrimSpace(r.attr(ns.Text, "level"))); err == nil && n > 0 {
+	if n, err := num.Atoi(strings.TrimSpace(r.attr(ns.Text, "level"))); err == nil && n > 0 {
 		level = min(n, 10)
 	}
 	id := r.attr(ns.Text, "list-id")
@@ -386,7 +387,7 @@ func (r *reader) numberedParagraph(c ctxt, dst *[]gofastcore.Block) {
 	}
 	l := &listCtx{style: r.set.List(r.sc, name), name: name, depth: level, count: count}
 	it := &itemCtx{list: l, depth: level, start: -1}
-	if n, err := strconv.Atoi(strings.TrimSpace(r.attr(ns.Text, "start-value"))); err == nil && n >= 0 {
+	if n, err := num.Atoi(strings.TrimSpace(r.attr(ns.Text, "start-value"))); err == nil && n >= 0 {
 		it.start = n
 	}
 	var given string

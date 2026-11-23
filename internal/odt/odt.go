@@ -25,6 +25,7 @@ import (
 	"github.com/AOShei/go-fast-core"
 	"github.com/AOShei/go-fast-odf/internal/clean"
 	"github.com/AOShei/go-fast-odf/internal/ns"
+	"github.com/AOShei/go-fast-odf/internal/num"
 	"github.com/AOShei/go-fast-odf/internal/odpkg"
 	"github.com/AOShei/go-fast-odf/internal/style"
 	"github.com/AOShei/go-fast-odf/internal/xmlscan"
@@ -581,7 +582,7 @@ func (r *reader) paragraph(c ctxt, heading bool, item *itemCtx, dst *[]gofastcor
 	level := 0
 	isHeader := false
 	if heading {
-		if n, err := strconv.Atoi(strings.TrimSpace(r.attr(ns.Text, "outline-level"))); err == nil && n > 0 {
+		if n, err := num.Atoi(strings.TrimSpace(r.attr(ns.Text, "outline-level"))); err == nil && n > 0 {
 			level = n
 		} else if ps.Outline > 0 {
 			level = ps.Outline
@@ -592,7 +593,7 @@ func (r *reader) paragraph(c ctxt, heading bool, item *itemCtx, dst *[]gofastcor
 		isHeader = r.attr(ns.Text, "is-list-header") == "true"
 		if r.attr(ns.Text, "restart-numbering") == "true" {
 			start := 1
-			if n, err := strconv.Atoi(strings.TrimSpace(r.attr(ns.Text, "start-value"))); err == nil && n >= 0 {
+			if n, err := num.Atoi(strings.TrimSpace(r.attr(ns.Text, "start-value"))); err == nil && n >= 0 {
 				start = n
 			}
 			r.outline.restart(level, start)

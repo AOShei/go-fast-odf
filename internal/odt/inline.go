@@ -1,7 +1,6 @@
 package odt
 
 import (
-	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -9,6 +8,7 @@ import (
 	"github.com/AOShei/go-fast-odf/internal/clean"
 	"github.com/AOShei/go-fast-odf/internal/display"
 	"github.com/AOShei/go-fast-odf/internal/ns"
+	"github.com/AOShei/go-fast-odf/internal/num"
 	"github.com/AOShei/go-fast-odf/internal/style"
 	"github.com/AOShei/go-fast-odf/internal/xmlscan"
 )
@@ -220,7 +220,7 @@ func (r *reader) inlineText(p *para, ru run, local string) {
 		r.inline(p, inner, s.Depth())
 	case "s":
 		n := 1
-		if v, err := strconv.Atoi(strings.TrimSpace(r.attr(ns.Text, "c"))); err == nil && v > 0 {
+		if v, err := num.Atoi(strings.TrimSpace(r.attr(ns.Text, "c"))); err == nil && v > 0 {
 			n = min(v, maxSpaces)
 			r.lost(capSpaces, int64(v-n))
 		}
