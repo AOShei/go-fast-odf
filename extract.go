@@ -56,27 +56,26 @@ const (
 // What the file declares about display is on the blocks, spans, table
 // regions and parts (gofastcore.Display), not in warnings.
 const (
-	// WarnUnreadContent: the document holds content of a kind this
-	// version does not read: plug-ins and floating frames, embedded
-	// objects that could not be read (a formula or chart whose content
-	// gives none, an object whose directory has no content.xml),
-	// documents held whole in a flat file. The message says what and how
-	// many. A picture over 64 MiB of base64 in a flat file, which v0.1.1
-	// reported here, is gofastcore.WarnLimitExceeded.
-	WarnUnreadContent = odt.WarnUnreadContent
-	// WarnRegionSplit: an area of a sheet whose cells are spread so thinly
-	// that the rectangle around them is mostly empty was not written as
-	// one table; each run of cells side by side in a row is a table of
-	// one row instead.
-	WarnRegionSplit = odt.WarnRegionSplit
-	// WarnFormulaNoValue: cells of a sheet hold formulas with no stored
-	// result (no value attribute and no text), so they show nothing; one
-	// warning per sheet gives the count. The formulas are in Table.Cells
-	// when Options.Cells is set.
-	WarnFormulaNoValue = odt.WarnFormulaNoValue
-	// WarnPartDamaged: a supporting stream (manifest, styles, metadata)
-	// could not be read to its end; what was read is used.
-	WarnPartDamaged = odt.WarnPartDamaged
+	// WarnUnreadContent was odf.unread_content, raised when the document holds content of a kind this version does not read.
+	//
+	// Deprecated: the event is go-fast-core's shared code input.unread_content
+	// (gofastcore.WarnInputUnreadContent) since v0.2.0; this name has that value.
+	WarnUnreadContent = gofastcore.WarnInputUnreadContent
+	// WarnRegionSplit was odf.region_split, raised when a sparse area of a sheet was written as one-row tables.
+	//
+	// Deprecated: the event is go-fast-core's shared code table.region_split
+	// (gofastcore.WarnTableRegionSplit) since v0.2.0; this name has that value.
+	WarnRegionSplit = gofastcore.WarnTableRegionSplit
+	// WarnFormulaNoValue was odf.formula_no_value, raised when formula cells have no stored result.
+	//
+	// Deprecated: the event is go-fast-core's shared code table.formula_no_value
+	// (gofastcore.WarnTableFormulaNoValue) since v0.2.0; this name has that value.
+	WarnFormulaNoValue = gofastcore.WarnTableFormulaNoValue
+	// WarnPartDamaged was odf.part_damaged, raised when a supporting stream (manifest, styles, metadata) could not be read to its end.
+	//
+	// Deprecated: the event is go-fast-core's shared code input.stream_damaged
+	// (gofastcore.WarnInputStreamDamaged) since v0.2.0; this name has that value.
+	WarnPartDamaged = gofastcore.WarnInputStreamDamaged
 	// WarnPropertyTruncated was raised by v0.1.1 and earlier when a
 	// metadata value was cut at 64 KiB or keywords or user-defined
 	// properties past 256 were left out.
@@ -84,9 +83,11 @@ const (
 	// Deprecated: these cuts are reported as gofastcore.WarnLimitExceeded,
 	// as every bound that cuts output is; this code is no longer raised.
 	WarnPropertyTruncated = "odf.property_truncated"
-	// WarnControlCharsRemoved: control characters with no meaning as text
-	// were removed from extracted strings.
-	WarnControlCharsRemoved = "odf.control_characters_removed"
+	// WarnControlCharsRemoved was odf.control_characters_removed, raised when control characters with no meaning as text were removed.
+	//
+	// Deprecated: the event is go-fast-core's shared code text.control_characters_removed
+	// (gofastcore.WarnTextControlCharactersRemoved) since v0.2.0; this name has that value.
+	WarnControlCharsRemoved = gofastcore.WarnTextControlCharactersRemoved
 )
 
 // Extractor extracts OpenDocument files. The zero value is ready to use
@@ -299,10 +300,22 @@ func (e *Extractor) Extract(ctx context.Context, r io.ReaderAt, size int64, opts
 	doc := gofastcore.New("odt")
 	md := meta.Read(pkg)
 	doc.Metadata = md.Metadata
-	if encrypted(pkg) || pkg.Encrypted("meta.xml") || ctx.Value(innerKey{}) != nil {
-		doc.Metadata.Encrypted = true
-	}
 	warn := func(sev gofastcore.Severity, code, msg string) { doc.Warn(sev, code, msg) }
+	if outer, ok := ctx.Value(innerKey{}).(*odpkg.Package); ok {
+		// The whole package was encrypted (ODF 1.4); this is what it
+		// decrypted to.
+		doc.Metadata.Encrypted = true
+		warn(gofastcore.SeverityInfo, gofastcore.WarnInputDecrypted,
+			"the whole package was encrypted with "+outer.Scheme(encryptedPackage)+", and was decrypted with the password given")
+	} else if encrypted(pkg) || pkg.Encrypted("meta.xml") {
+		doc.Metadata.Encrypted = true
+		name := "content.xml"
+		if !pkg.Encrypted(name) {
+			name = "meta.xml"
+		}
+		warn(gofastcore.SeverityInfo, gofastcore.WarnInputDecrypted,
+			"the package's members were encrypted with "+pkg.Scheme(name)+", and were decrypted with the password given")
+	}
 	if rec := pkg.Recovered(); rec != nil {
 		msg := fmt.Sprintf("the archive's directory cannot be read: the file is cut short or damaged. %d members were found by their own headers", rec.Members)
 		if rec.Cut != "" {
@@ -316,7 +329,7 @@ func (e *Extractor) Extract(ctx context.Context, r io.ReaderAt, size int64, opts
 		warn(gofastcore.SeverityWarning, gofastcore.WarnInputAmbiguous, fmt.Sprintf("%d archive members are named twice or share a name; programs differ in which they read", n))
 	}
 	if pkg.ManifestDamaged() {
-		warn(gofastcore.SeverityWarning, WarnPartDamaged, "META-INF/manifest.xml could not be read to its end")
+		warn(gofastcore.SeverityWarning, gofastcore.WarnInputStreamDamaged, "META-INF/manifest.xml could not be read to its end")
 	}
 	if pkg.ManifestFull() {
 		warn(gofastcore.SeverityError, gofastcore.WarnLimitExceeded, fmt.Sprintf("META-INF/manifest.xml has more than %d entries; the rest were not read", odpkg.MaxManifestEntries))
@@ -325,10 +338,10 @@ func (e *Extractor) Extract(ctx context.Context, r io.ReaderAt, size int64, opts
 	case md.Budget:
 		warn(gofastcore.SeverityError, gofastcore.WarnLimitExceeded, "decompressed size limit reached while reading meta.xml")
 	case md.Damaged:
-		warn(gofastcore.SeverityWarning, WarnPartDamaged, "meta.xml could not be read to its end; the properties read before are kept")
+		warn(gofastcore.SeverityWarning, gofastcore.WarnInputStreamDamaged, "meta.xml could not be read to its end; the properties read before are kept")
 	}
 	if md.Removed > 0 {
-		warn(gofastcore.SeverityInfo, WarnControlCharsRemoved, fmt.Sprintf("%d in document properties", md.Removed))
+		warn(gofastcore.SeverityInfo, gofastcore.WarnTextControlCharactersRemoved, controlsMessage(md.Removed, "the document properties"))
 	}
 	external := 0
 	if md.Refresh != "" {
@@ -340,7 +353,7 @@ func (e *Extractor) Extract(ctx context.Context, r io.ReaderAt, size int64, opts
 		if errors.Is(err, odpkg.ErrBudget) {
 			warn(gofastcore.SeverityError, gofastcore.WarnLimitExceeded, "decompressed size limit reached while reading styles.xml")
 		} else {
-			warn(gofastcore.SeverityWarning, WarnPartDamaged, "styles.xml could not be read to its end; the styles read before are used")
+			warn(gofastcore.SeverityWarning, gofastcore.WarnInputStreamDamaged, "styles.xml could not be read to its end; the styles read before are used")
 		}
 	}
 	if set.Truncated {
@@ -510,4 +523,12 @@ func wrap(err error) error {
 		shared = gofastcore.ErrPasswordRequired
 	}
 	return fmt.Errorf("gofastodf: %s: %w", clean.Label(err.Error()), shared)
+}
+
+// controlsMessage says that n control characters were removed from what.
+func controlsMessage(n int, what string) string {
+	if n == 1 {
+		return "1 control character with no meaning as text was removed from " + what
+	}
+	return fmt.Sprintf("%d control characters with no meaning as text were removed from %s", n, what)
 }

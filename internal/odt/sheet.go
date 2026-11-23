@@ -16,11 +16,11 @@ import (
 // WarnRegionSplit: an area of a sheet whose cells are spread so thinly
 // that the rectangle around them is mostly empty was written as one table
 // per run of cells in a row instead of as one table.
-const WarnRegionSplit = "odf.region_split"
+const WarnRegionSplit = gofastcore.WarnTableRegionSplit
 
 // WarnFormulaNoValue: cells hold formulas with no stored result, so they
 // show nothing; the message says how many on the sheet.
-const WarnFormulaNoValue = "odf.formula_no_value"
+const WarnFormulaNoValue = gofastcore.WarnTableFormulaNoValue
 
 // Bounds on a sheet's coordinates. A sheet of LibreOffice has at most
 // 16,384 columns and 1,048,576 rows; a file can say anything.

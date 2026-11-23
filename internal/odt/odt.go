@@ -30,11 +30,10 @@ import (
 	"github.com/AOShei/go-fast-odf/internal/xmlscan"
 )
 
-// Warning codes this package raises beyond the shared ones. The public
-// package documents them.
+// Shared warning codes this package raises, by short names.
 const (
-	WarnUnreadContent = "odf.unread_content"
-	WarnPartDamaged   = "odf.part_damaged"
+	WarnUnreadContent = gofastcore.WarnInputUnreadContent
+	WarnPartDamaged   = gofastcore.WarnInputStreamDamaged
 )
 
 // Config holds the settings of the public Extractor that concern text
@@ -184,8 +183,12 @@ func Read(ctx context.Context, pkg *odpkg.Package, set *style.Set, opts *gofastc
 		return nil, err
 	}
 	if r.removed > 0 {
-		res.Warnings = append(res.Warnings, gofastcore.Warning{Code: "odf.control_characters_removed", Severity: gofastcore.SeverityInfo,
-			Message: fmt.Sprintf("%d control characters removed from the text", r.removed)})
+		msg := fmt.Sprintf("%d control characters with no meaning as text were removed from the text", r.removed)
+		if r.removed == 1 {
+			msg = "1 control character with no meaning as text was removed from the text"
+		}
+		res.Warnings = append(res.Warnings, gofastcore.Warning{Code: gofastcore.WarnTextControlCharactersRemoved, Severity: gofastcore.SeverityInfo,
+			Message: msg})
 	}
 	r.unplacedControls()
 	// What the metadata and manifest lost, with what the body lost that

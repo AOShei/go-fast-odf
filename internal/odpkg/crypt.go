@@ -404,3 +404,27 @@ func (p *Package) work() *Package {
 	}
 	return p
 }
+
+// Scheme describes how member name is encrypted, for a message: the
+// cipher and how its key is derived from the password ("AES-256-GCM with
+// a key by Argon2id"). It is "" for a member that is not encrypted.
+func (p *Package) Scheme(name string) string {
+	e, ok := p.manifest[Canonical(name)]
+	if !ok || e.Encryption == nil {
+		return ""
+	}
+	enc := e.Encryption
+	cipher := map[string]string{algAES256: "AES-256-CBC", algAES192: "AES-192-CBC", algAES128: "AES-128-CBC",
+		algGCM256: "AES-256-GCM", algGCM192: "AES-192-GCM", algGCM128: "AES-128-GCM", algBlowfsh: "Blowfish CFB",
+		nsManifest + "blowfish": "Blowfish CFB"}[enc.Algorithm]
+	if cipher == "" {
+		cipher = clean.Label(enc.Algorithm)
+	}
+	switch enc.Derivation {
+	case "PBKDF2", "http://www.w3.org/2009/xmlenc11#pbkdf2":
+		return fmt.Sprintf("%s with a key by PBKDF2 at %d iterations", cipher, enc.Iterations)
+	case argonLO, nsManifest + "argon2id":
+		return cipher + " with a key by Argon2id"
+	}
+	return cipher
+}
