@@ -3,6 +3,21 @@
 All notable changes to go-fast-odf are recorded here, in the style of
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## v0.2.0 (2026-11-23)
+
+- **Shared warning codes** (go-fast-core v0.1.2), as every go-fast
+  library raises them: `odf.unread_content` is `input.unread_content`,
+  `odf.part_damaged` is `input.stream_damaged`, `odf.region_split` is
+  `table.region_split`, `odf.formula_no_value` is
+  `table.formula_no_value`, and `odf.control_characters_removed` is
+  `text.control_characters_removed`. The JSON code strings change; the Go
+  names are deprecated and have the new values. The control-character
+  messages say what their number counts.
+- **`input.decrypted`** (info) on a decrypted package, beside
+  `Metadata.Encrypted`, naming the cipher and key derivation ("AES-256-CBC
+  with a key by PBKDF2 at 100000 iterations").
+- Requires go-fast-core v0.1.2.
+
 ## v0.1.3 (2026-11-22)
 
 - The bound on names and labels that reach the output (slide names from

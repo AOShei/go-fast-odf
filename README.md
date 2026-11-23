@@ -10,7 +10,7 @@ if err != nil { ... }
 fmt.Println(doc.Markdown())
 ```
 
-**Status: v0.1.3 (2026-11-22).** Text documents (`.odt`, with the template `.ott`, master documents `.odm` and `.otm`, and web pages `.oth`), spreadsheets (`.ods`, `.ots`), presentations (`.odp`, `.otp`), and the flat XML variants (`.fodt`, `.fods`, `.fodp`) are read. Password-protected packages are decrypted (AES-CBC with PBKDF2; ODF 1.4's AES-GCM with Argon2id; Blowfish CFB of ODF 1.0 and 1.1). Drawings, charts, formulas, images and databases as documents in their own right, and the OpenOffice.org 1 formats, give `ErrUnsupported`.
+**Status: v0.2.0 (2026-11-23).** Text documents (`.odt`, with the template `.ott`, master documents `.odm` and `.otm`, and web pages `.oth`), spreadsheets (`.ods`, `.ots`), presentations (`.odp`, `.otp`), and the flat XML variants (`.fodt`, `.fods`, `.fodp`) are read. Password-protected packages are decrypted (AES-CBC with PBKDF2; ODF 1.4's AES-GCM with Argon2id; Blowfish CFB of ODF 1.0 and 1.1). Drawings, charts, formulas, images and databases as documents in their own right, and the OpenOffice.org 1 formats, give `ErrUnsupported`.
 
 ## API
 
@@ -132,15 +132,16 @@ Colour, size, position and overlap are not judged: text colour is not compared w
 
 Shared codes raised: `part.failed`, `part.no_text`, `text.tracked_changes`, `structure.heading_level_clamped`, `child.failed` (an embedded file could not be taken out of the package; it is listed in `Children` unread), `input.repaired`, `input.ambiguous`, `input.active_content` (Basic or other scripts in the package, event handlers, links that run macros, applets; none of it is read or run), `input.external_reference` (linked pictures, linked sections, plug-ins and floating frames, linked objects, an auto-reload address; nothing is fetched), `limit.exceeded`.
 
-Codes of this library:
+Codes for the events below are shared by every go-fast library (go-fast-core v0.1.2); before v0.2.0 this library raised them as `odf.unread_content`, `odf.region_split`, `odf.formula_no_value`, `odf.part_damaged` and `odf.control_characters_removed`. The Go names `WarnUnreadContent`, `WarnRegionSplit`, `WarnFormulaNoValue`, `WarnPartDamaged` and `WarnControlCharsRemoved` are deprecated and have the shared values. This library has no codes of its own but the deprecated `odf.property_truncated`, no longer raised.
 
 | Code | What happened |
 |---|---|
-| `odf.unread_content` | The document holds content this version does not read: an embedded formula or chart it could not read, an embedded object whose directory has no `content.xml`, a document held whole in a flat file, plug-ins and floating frames. The message counts them |
-| `odf.region_split` | An area of a sheet with thinly spread cells was written as one table per run of cells in a row |
-| `odf.formula_no_value` | Cells of a sheet hold formulas with no stored result (no value attribute, no text), so they show nothing; one warning per sheet with the count (info). The formulas stay in `Table.Cells` |
-| `odf.part_damaged` | A supporting stream (manifest, styles, metadata) could not be read to its end; what was read is used. More styles or manifest entries than are read is `limit.exceeded` |
-| `odf.control_characters_removed` | Control characters with no meaning as text were removed |
+| `input.unread_content` (shared) | The document holds content this version does not read: an embedded formula or chart it could not read, an embedded object whose directory has no `content.xml`, a document held whole in a flat file, plug-ins and floating frames. The message counts them |
+| `table.region_split` (shared) | An area of a sheet with thinly spread cells was written as one table per run of cells in a row (info) |
+| `table.formula_no_value` (shared) | Cells of a sheet hold formulas with no stored result (no value attribute, no text), so they show nothing; one warning per sheet with the count (info). The formulas stay in `Table.Cells` |
+| `input.stream_damaged` (shared) | A supporting stream (manifest, styles, metadata) could not be read to its end; what was read is used. More styles or manifest entries than are read is `limit.exceeded` |
+| `text.control_characters_removed` (shared) | Control characters with no meaning as text were removed, from the text of a part or from the document properties; the message gives the count (info) |
+| `input.decrypted` (shared) | The package was decrypted, with `Metadata.Encrypted` set; the message names the cipher and key derivation, and that the password given opened it (info) |
 
 ## Errors
 
@@ -154,7 +155,7 @@ With `Options.Password`, an encrypted package is decrypted:
 - The `encrypted-package` member of ODF 1.4, which holds the whole package: AES-GCM with an Argon2id key (LibreOffice's experimental `loext:` parameter names and ODF 1.4's `manifest:` ones). Argon2id and BLAKE2b are in `internal/argon2`, written from RFC 9106 and RFC 7693.
 - Blowfish CFB (ODF 1.0 and 1.1, OpenOffice.org 1 and 2) with a PBKDF2 key from a SHA-1 start key, in `internal/blowfish`. Its tables, the hexadecimal digits of pi, are computed with `math/big` on first use, not typed in; the tests check them and Schneier's test vectors.
 
-An algorithm, key derivation or checksum other than these gives `ErrUnsupported`. Without a password an encrypted file is `ErrPasswordRequired`; a password is never guessed. The password is passed to embedded documents as core says; objects inside an encrypted package are decrypted with it. `Metadata.Encrypted` is set on a decrypted document.
+A decrypted document has `Metadata.Encrypted` set and the info warning `input.decrypted`, which names the cipher and key derivation. An algorithm, key derivation or checksum other than these gives `ErrUnsupported`. Without a password an encrypted file is `ErrPasswordRequired`; a password is never guessed. The password is passed to embedded documents as core says; objects inside an encrypted package are decrypted with it. `Metadata.Encrypted` is set on a decrypted document.
 
 The manifest sets the cost of a key, so it is capped: PBKDF2 at 10 million iterations for a member and 30 million for a package; Argon2id at 256 MiB of memory, 64 passes, 64 lanes, and memory times passes at 1 GiB for a key (2 GiB for a package). Inflated bytes of decrypted members count against `MaxDecodedBytes` like any others. An encrypted member that the archive also compresses (writers store them) may inflate to no more than the size of the package before it is decrypted; past that the package is damaged (`ErrMalformed`). ODF 1.4's inner package, decrypted and inflated, may be no larger than `MaxInputBytes` (counted as it is inflated; `ErrLimitExceeded` past it), and its members share the outer package's key-derivation caps.
 

@@ -66,6 +66,22 @@ func checkDecrypted(t *testing.T, c encCase) {
 	if !doc.Metadata.Encrypted {
 		t.Errorf("%s: Metadata.Encrypted not set", c.file)
 	}
+	var decrypted []string
+	for _, w := range doc.Warnings {
+		if w.Code == gofastcore.WarnInputDecrypted && w.Severity == gofastcore.SeverityInfo {
+			decrypted = append(decrypted, w.Message)
+		}
+	}
+	scheme := "AES-256-CBC with a key by PBKDF2"
+	switch {
+	case strings.Contains(c.file, "gcm"):
+		scheme = "AES-256-GCM with a key by Argon2id"
+	case strings.Contains(c.file, "blowfish"):
+		scheme = "Blowfish CFB with a key by PBKDF2"
+	}
+	if len(decrypted) != 1 || !strings.Contains(decrypted[0], scheme) || !strings.Contains(decrypted[0], "password given") {
+		t.Errorf("%s: input.decrypted %q, want one naming %q", c.file, decrypted, scheme)
+	}
 	if _, err := extractFile(data, ""); !errors.Is(err, gofastcore.ErrPasswordRequired) {
 		t.Errorf("%s without a password: %v", c.file, err)
 	}
