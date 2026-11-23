@@ -2,7 +2,6 @@ package odpkg
 
 import (
 	"bytes"
-	"compress/flate"
 	"context"
 	"crypto/aes"
 	"crypto/cipher"
@@ -18,6 +17,7 @@ import (
 	"io"
 	"strings"
 
+	"github.com/AOShei/go-fast-core/inflate"
 	"github.com/AOShei/go-fast-odf/internal/clean"
 )
 
@@ -352,7 +352,7 @@ func (p *Package) openEncrypted(name string) (io.ReadCloser, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &budgetReader{rc: io.NopCloser(flate.NewReader(bytes.NewReader(pt))), p: p}, nil
+	return &budgetReader{rc: io.NopCloser(inflate.NewRawReader(pt, 1<<62)), p: p}, nil
 }
 
 // Check decrypts a member to see whether the password opens it, without

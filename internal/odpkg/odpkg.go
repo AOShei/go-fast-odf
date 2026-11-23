@@ -21,6 +21,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/AOShei/go-fast-core/inflate"
 	"github.com/AOShei/go-fast-odf/internal/clean"
 	"github.com/AOShei/go-fast-odf/internal/ns"
 	number "github.com/AOShei/go-fast-odf/internal/num"
@@ -137,6 +138,9 @@ func Open(r io.ReaderAt, size int64, lim Limits) (*Package, error) {
 			return nil, ErrCutOff
 		}
 	}
+	// Deflated members are read with go-fast-core's inflate, about twice
+	// as fast as compress/flate.
+	zr.RegisterDecompressor(zip.Deflate, inflate.Decompressor)
 	if lim.MaxMembers > 0 && len(zr.File) > lim.MaxMembers {
 		return nil, fmt.Errorf("%w: %d, limit %d", ErrTooManyParts, len(zr.File), lim.MaxMembers)
 	}
