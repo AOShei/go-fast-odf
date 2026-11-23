@@ -3,7 +3,7 @@
 All notable changes to go-fast-odf are recorded here, in the style of
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## Unreleased (v0.2.0)
+## v0.2.0 (2026-11-23)
 
 - **Shared warning codes** (go-fast-core v0.1.2), as every go-fast
   library raises them: `odf.unread_content` is `input.unread_content`,
