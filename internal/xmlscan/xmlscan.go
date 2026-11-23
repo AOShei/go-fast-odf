@@ -27,6 +27,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"sync"
 	"unicode/utf8"
 )
 
@@ -198,6 +199,48 @@ func NewBytes(data []byte, opts *Options) *Scanner {
 	return s
 }
 
+// windows keeps the windows of scanners released, by size: 4 KiB, 8, 16,
+// 32 and 64 KiB, for the next stream read, of this document or another.
+var windows [5]sync.Pool
+
+// windowClass is the class of windows that holds size bytes, or -1.
+func windowClass(size int) int {
+	for c := range windows {
+		if size <= 4096<<c {
+			return c
+		}
+	}
+	return -1
+}
+
+func getWindow(size int) []byte {
+	c := windowClass(size)
+	if c < 0 {
+		return make([]byte, size)
+	}
+	if p, _ := windows[c].Get().(*[]byte); p != nil {
+		return *p
+	}
+	return make([]byte, 4096<<c)
+}
+
+// Release hands the scanner's window back to be reused, and leaves the
+// scanner at the end of its stream until it is Reset. What it read is a
+// view of the window, so nothing of it may be held after: that holds
+// already, since the window slides over the stream as it is read.
+func (s *Scanner) Release() {
+	if s.own {
+		if c := windowClass(len(s.buf)); c >= 0 && len(s.buf) == 4096<<c && cap(s.buf) == len(s.buf) {
+			b := s.buf
+			windows[c].Put(&b)
+		}
+	}
+	s.buf, s.own, s.r = nil, false, nil
+	s.pos, s.end, s.eof = 0, 0, true
+	s.qname, s.local, s.text = nil, nil, nil
+	s.attrs = s.attrs[:0]
+}
+
 // Reset makes the scanner read from r, keeping its buffers.
 func (s *Scanner) Reset(r io.Reader, opts *Options) {
 	size := DefaultBufferSize
@@ -205,7 +248,8 @@ func (s *Scanner) Reset(r io.Reader, opts *Options) {
 		size = opts.BufferSize
 	}
 	if !s.own || len(s.buf) < size {
-		s.buf = make([]byte, size)
+		s.Release()
+		s.buf = getWindow(size)
 	}
 	s.reset(opts)
 	s.r, s.own = r, true
@@ -223,6 +267,9 @@ func (s *Scanner) ResetBytes(data []byte, opts *Options) {
 func (s *Scanner) reset(opts *Options) {
 	s.pos, s.end, s.base, s.eof, s.err, s.mode = 0, 0, 0, false, nil, modeNormal
 	s.kind, s.pendingEnd, s.Repairs = EOF, false, 0
+	// No view of the stream read before (or of a window another scanner
+	// now holds) is left for the first tokens to show.
+	s.qname, s.local, s.space, s.text = nil, nil, 0, nil
 	s.stack, s.names, s.binds, s.bindNames = s.stack[:0], s.names[:0], s.binds[:0], s.bindNames[:0]
 	if len(s.slots) > 1024 {
 		s.slots, s.heads = nil, s.heads[:0] // do not carry a hostile file's prefixes around

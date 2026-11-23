@@ -156,6 +156,9 @@ func Read(ctx context.Context, pkg *odpkg.Package, set *style.Set, opts *gofastc
 	r.lists.init()
 	res := &Result{}
 
+	// The scanner's window goes back for the next document once all is
+	// read (deferred first, so run last).
+	defer r.s.Release()
 	c, err := pkg.Scan("content.xml", &r.s)
 	if err != nil {
 		return nil, err
@@ -259,6 +262,7 @@ func (r *reader) textBody(serr error) gofastcore.Part {
 		saved := r.s
 		r.s = xmlscan.Scanner{}
 		headers, footers = r.masterPages(&part)
+		r.s.Release()
 		r.s = saved
 	}
 	part.Blocks = append(part.Blocks, headers...)
