@@ -3,6 +3,22 @@
 All notable changes to go-fast-odf are recorded here, in the style of
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## Unreleased
+
+### Faster
+
+- **Spreadsheets allocate a quarter of what they did.** On 1,265 ODS
+  files from Common Crawl (90 MB), reading every file allocates 3.1 GB
+  instead of 11.3 GB, one worker takes 4.8 s instead of 7.6 s, and 24
+  workers 0.81 s instead of 1.76 s (the garbage collector held the
+  workers back). A row's cells and a cell's blocks are read into buffers
+  kept for the next, paragraphs reuse theirs, a cell of one plain
+  paragraph keeps its text as it is, an absent repetition attribute no
+  longer makes an error value, and the column runs of a band are merged
+  as they are read. ODT allocates 10% less. The JSON and text are
+  byte-identical on 3,783 ODT, ODS and ODP files, with default options
+  and with cells and spans asked for.
+
 ## v0.2.0 (2026-11-23)
 
 - **Shared warning codes** (go-fast-core v0.1.2), as every go-fast

@@ -490,7 +490,15 @@ func (r *reader) sheetRow(sh *sheetIn, row *int) {
 	if hidden != 0 && !pastRow {
 		sh.rows = append(sh.rows, span{from: top, to: *row - 1, hidden: hidden})
 	}
-	var cells []sheetCell
+	// The row's cells and a cell's blocks are read into buffers kept on
+	// the reader, taken while in use so that a row read within a cell
+	// (a sheet embedded in one) has its own.
+	cells, content := r.rowCells[:0], r.cellBlocks[:0]
+	r.rowCells, r.cellBlocks = nil, nil
+	defer func() {
+		clear(content[:cap(content)])
+		r.rowCells, r.cellBlocks = cells[:0], content[:0]
+	}()
 	var notes []placed
 	var noValue int64
 	var lostCols int64               // cells with something past the last column
@@ -541,7 +549,8 @@ func (r *reader) sheetRow(sh *sheetIn, row *int) {
 		value, valueCut := cellValue(r, vt)
 		formulaCut := false
 		cs := r.set.Box(r.sc, "table-cell", styleName)
-		var content []gofastcore.Block
+		clear(content)
+		content = content[:0]
 		r.blocks(ctxt{}, &content)
 		text, spans, hid, rest := r.flatten(content, false)
 		if vt == "date" || vt == "time" {
@@ -582,7 +591,8 @@ func (r *reader) sheetRow(sh *sheetIn, row *int) {
 			}
 		}
 		if more != (cellMore{}) {
-			c.more = &more
+			m := more // on the heap only when the cell has more
+			c.more = &m
 		}
 		if past {
 			switch {
@@ -847,6 +857,7 @@ func (r *reader) regions(sh *sheetIn, part *gofastcore.Part) []gofastcore.Block 
 // touch form a region. The cells come in row order.
 func findRegions(cells []sheetCell) []region {
 	var out []region
+	var cols, groups []span
 	for i := 0; i < len(cells); {
 		// A band: rows with cells, each next to the one before, or under
 		// a cell that spans down to it.
@@ -855,13 +866,21 @@ func findRegions(cells []sheetCell) []region {
 			bottom = max(bottom, int(cells[j].row+cells[j].rows)-1)
 			j++
 		}
-		band := cells[i:j]
-		var cols []span
+		band := cells[i:j:j]
+		cols, groups = cols[:0], groups[:0]
 		for _, c := range band {
-			cols = append(cols, span{from: int(c.col), to: int(c.col+c.cols) - 1})
+			// Cells come in row and column order: one that starts within
+			// or just after the last run (in its row or the row before)
+			// extends it, which leaves the columns covered, and so the
+			// groups, as they are.
+			from, to := int(c.col), int(c.col+c.cols)-1
+			if n := len(cols); n > 0 && from >= cols[n-1].from && from <= cols[n-1].to+1 {
+				cols[n-1].to = max(cols[n-1].to, to)
+				continue
+			}
+			cols = append(cols, span{from: from, to: to})
 		}
 		slices.SortFunc(cols, func(a, b span) int { return a.from - b.from })
-		var groups []span
 		for _, c := range cols {
 			if n := len(groups); n > 0 && c.from <= groups[n-1].to+1 {
 				groups[n-1].to = max(groups[n-1].to, c.to)
@@ -871,9 +890,20 @@ func findRegions(cells []sheetCell) []region {
 		}
 		for _, g := range groups {
 			reg := region{r0: int(band[0].row), r1: bottom, c0: g.from, c1: g.to}
-			for _, c := range band {
-				if int(c.col) >= g.from && int(c.col) <= g.to {
-					reg.cells = append(reg.cells, c)
+			if len(groups) == 1 {
+				reg.cells = band // read only, and capped: nothing can append into the cells after
+			} else {
+				n := 0
+				for _, c := range band {
+					if int(c.col) >= g.from && int(c.col) <= g.to {
+						n++
+					}
+				}
+				reg.cells = make([]sheetCell, 0, n)
+				for _, c := range band {
+					if int(c.col) >= g.from && int(c.col) <= g.to {
+						reg.cells = append(reg.cells, c)
+					}
 				}
 			}
 			out = append(out, reg)
