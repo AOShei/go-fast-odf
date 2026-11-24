@@ -16,19 +16,19 @@ Each tool reads every file in one long-lived process, the way a pipeline does, w
 
 | Tool | Wall | Against go-fast-odf | CPU | Peak memory | Failed | Median | 95th | 99th | Slowest file |
 |---|---|---|---|---|---|---|---|---|---|
-| **go-fast-odf** | 2.24 s |  | 2.6 s | 35 MB | 0 | 0.48 ms | 2.50 ms | 6.61 ms | 42 ms |
-| Kreuzberg (Rust core, Python) | 2.33 s | 1.04 times | 2.3 s | 103 MB | 1 | 0.40 ms | 2.84 ms | 9.05 ms | 63 ms |
-| odfpy (Python) | 52.49 s | 23.47 times | 52.3 s | 250 MB | 19 | 8.41 ms | 79.32 ms | 230.19 ms | 1360 ms |
-| pandoc (a process a file) | 229.07 s | 102.41 times | 215.5 s | 763 MB | 15 | 74.81 ms | 147.04 ms | 376.34 ms | 4879 ms |
+| **go-fast-odf** | 1.70 s |  | 1.9 s | 43 MB | 0 | 0.34 ms | 1.93 ms | 5.41 ms | 33 ms |
+| Kreuzberg (Rust core, Python) | 2.33 s | 1.37 times | 2.3 s | 103 MB | 1 | 0.40 ms | 2.84 ms | 9.05 ms | 63 ms |
+| odfpy (Python) | 52.49 s | 30.93 times | 52.3 s | 250 MB | 19 | 8.41 ms | 79.32 ms | 230.19 ms | 1360 ms |
+| pandoc (a process a file) | 229.07 s | 134.98 times | 215.5 s | 763 MB | 15 | 74.81 ms | 147.04 ms | 376.34 ms | 4879 ms |
 
 ### 24 workers
 
 | Tool | Wall | Against go-fast-odf | CPU | Peak memory | Failed | Median | 95th | 99th | Slowest file |
 |---|---|---|---|---|---|---|---|---|---|
-| Kreuzberg (Rust core, Python) | 0.37 s | 0.96 times | 5.6 s | 1,373 MB | 1 | 0.72 ms | 6.44 ms | 20.07 ms | 66 ms |
-| **go-fast-odf** | 0.38 s |  | 5.1 s | 120 MB | 0 | 1.45 ms | 8.38 ms | 21.87 ms | 82 ms |
-| odfpy (Python) | 6.13 s | 15.97 times | 91.2 s | 2,150 MB | 19 | 13.72 ms | 174.75 ms | 397.38 ms | 1394 ms |
-| pandoc (a process a file) | 28.10 s | 73.27 times | 492.5 s | 5,225 MB | 15 | 160.96 ms | 437.75 ms | 1147.81 ms | 8083 ms |
+| **go-fast-odf** | 0.24 s |  | 3.8 s | 175 MB | 0 | 0.78 ms | 5.78 ms | 12.76 ms | 56 ms |
+| Kreuzberg (Rust core, Python) | 0.37 s | 1.52 times | 5.6 s | 1,373 MB | 1 | 0.72 ms | 6.44 ms | 20.07 ms | 66 ms |
+| odfpy (Python) | 6.13 s | 25.19 times | 91.2 s | 2,150 MB | 19 | 13.72 ms | 174.75 ms | 397.38 ms | 1394 ms |
+| pandoc (a process a file) | 28.10 s | 115.55 times | 492.5 s | 5,225 MB | 15 | 160.96 ms | 437.75 ms | 1147.81 ms | 8083 ms |
 
 ### go-fast-odf and `GOGC`
 
@@ -36,9 +36,9 @@ Go's garbage collector can be given more memory for less work with `GOGC` in the
 
 | `GOGC` | One worker | Peak | 24 workers | Peak |
 |---|---|---|---|---|
-| 100 (default) | 2.24 s | 35 MB | 0.38 s | 120 MB |
-| 200 | 2.08 s | 58 MB | 0.29 s | 231 MB |
-| 400 | 2.00 s | 86 MB | 0.27 s | 472 MB |
+| 100 (default) | 1.70 s | 39 MB | 0.26 s | 177 MB |
+| 200 | 1.63 s | 40 MB | 0.23 s | 273 MB |
+| 400 | 1.56 s | 91 MB | 0.20 s | 473 MB |
 
 ### Accuracy
 
@@ -59,21 +59,21 @@ Against LibreOffice's own export (text) of 285 files chosen at random (`referenc
 
 | Tool | Wall | Against go-fast-odf | CPU | Peak memory | Failed | Median | 95th | 99th | Slowest file |
 |---|---|---|---|---|---|---|---|---|---|
-| calamine (Rust crate) | 3.39 s | 0.61 times | 3.4 s | 1,113 MB | 11 | 0.23 ms | 7.27 ms | 48.26 ms | 371 ms |
-| **go-fast-odf** | 5.54 s |  | 6.4 s | 232 MB | 0 | 0.57 ms | 11.50 ms | 82.26 ms | 562 ms |
-| Kreuzberg (Rust core, Python) | 12.25 s | 2.21 times | 12.1 s | 1,526 MB | 11 | 0.52 ms | 25.43 ms | 178.35 ms | 1542 ms |
-| odfpy (Python) | 289.59 s | 52.30 times | 288.4 s | 3,657 MB | 1 | 12.70 ms | 567.04 ms | 5758.75 ms | 33158 ms |
-| pandas `read_excel` (odf engine) | 313.00 s | 56.52 times | 312.9 s | 3,713 MB | 6 | 14.33 ms | 653.26 ms | 5456.61 ms | 36193 ms |
+| calamine (Rust crate) | 3.39 s | 0.68 times | 3.4 s | 1,113 MB | 11 | 0.23 ms | 7.27 ms | 48.26 ms | 371 ms |
+| **go-fast-odf** | 4.99 s |  | 5.7 s | 197 MB | 0 | 0.46 ms | 10.07 ms | 75.00 ms | 509 ms |
+| Kreuzberg (Rust core, Python) | 12.25 s | 2.46 times | 12.1 s | 1,526 MB | 11 | 0.52 ms | 25.43 ms | 178.35 ms | 1542 ms |
+| odfpy (Python) | 289.59 s | 58.07 times | 288.4 s | 3,657 MB | 1 | 12.70 ms | 567.04 ms | 5758.75 ms | 33158 ms |
+| pandas `read_excel` (odf engine) | 313.00 s | 62.77 times | 312.9 s | 3,713 MB | 6 | 14.33 ms | 653.26 ms | 5456.61 ms | 36193 ms |
 
 ### 24 workers
 
 | Tool | Wall | Against go-fast-odf | CPU | Peak memory | Failed | Median | 95th | 99th | Slowest file |
 |---|---|---|---|---|---|---|---|---|---|
-| calamine (Rust crate) | 0.61 s | 0.62 times | 5.6 s | 1,618 MB | 11 | 0.40 ms | 14.39 ms | 84.25 ms | 469 ms |
-| **go-fast-odf** | 0.98 s |  | 10.0 s | 402 MB | 0 | 1.17 ms | 24.77 ms | 142.78 ms | 725 ms |
-| Kreuzberg (Rust core, Python) | 2.48 s | 2.53 times | 19.6 s | 3,788 MB | 11 | 0.87 ms | 43.42 ms | 277.87 ms | 1867 ms |
-| pandas `read_excel` (odf engine) | 48.29 s | 49.32 times | 412.3 s | 11,631 MB | 6 | 22.46 ms | 960.12 ms | 6875.05 ms | 41318 ms |
-| odfpy (Python) | 50.95 s | 52.03 times | 367.5 s | 10,596 MB | 1 | 18.42 ms | 932.44 ms | 7023.14 ms | 35276 ms |
+| calamine (Rust crate) | 0.61 s | 0.70 times | 5.6 s | 1,618 MB | 11 | 0.40 ms | 14.39 ms | 84.25 ms | 469 ms |
+| **go-fast-odf** | 0.86 s |  | 8.7 s | 392 MB | 0 | 0.90 ms | 20.10 ms | 114.44 ms | 637 ms |
+| Kreuzberg (Rust core, Python) | 2.48 s | 2.87 times | 19.6 s | 3,788 MB | 11 | 0.87 ms | 43.42 ms | 277.87 ms | 1867 ms |
+| pandas `read_excel` (odf engine) | 48.29 s | 55.99 times | 412.3 s | 11,631 MB | 6 | 22.46 ms | 960.12 ms | 6875.05 ms | 41318 ms |
+| odfpy (Python) | 50.95 s | 59.08 times | 367.5 s | 10,596 MB | 1 | 18.42 ms | 932.44 ms | 7023.14 ms | 35276 ms |
 
 ### go-fast-odf and `GOGC`
 
@@ -81,9 +81,9 @@ Go's garbage collector can be given more memory for less work with `GOGC` in the
 
 | `GOGC` | One worker | Peak | 24 workers | Peak |
 |---|---|---|---|---|
-| 100 (default) | 5.54 s | 232 MB | 0.98 s | 402 MB |
-| 200 | 5.33 s | 344 MB | 0.92 s | 456 MB |
-| 400 | 5.19 s | 344 MB | 0.84 s | 764 MB |
+| 100 (default) | 4.94 s | 242 MB | 0.87 s | 438 MB |
+| 200 | 4.79 s | 239 MB | 0.80 s | 569 MB |
+| 400 | 4.68 s | 466 MB | 0.77 s | 871 MB |
 
 ### Accuracy
 
@@ -107,15 +107,15 @@ Against LibreOffice's own export (CSV of every sheet) of 296 files chosen at ran
 
 | Tool | Wall | Against go-fast-odf | CPU | Peak memory | Failed | Median | 95th | 99th | Slowest file |
 |---|---|---|---|---|---|---|---|---|---|
-| **go-fast-odf** | 0.27 s |  | 0.3 s | 30 MB | 0 | 1.98 ms | 17.63 ms | 21.40 ms | 34 ms |
-| odfpy (Python) | 5.43 s | 19.93 times | 5.4 s | 202 MB | 2 | 39.81 ms | 336.36 ms | 469.96 ms | 603 ms |
+| **go-fast-odf** | 0.22 s |  | 0.2 s | 27 MB | 0 | 1.55 ms | 12.73 ms | 17.38 ms | 21 ms |
+| odfpy (Python) | 5.43 s | 24.23 times | 5.4 s | 202 MB | 2 | 39.81 ms | 336.36 ms | 469.96 ms | 603 ms |
 
 ### 24 workers
 
 | Tool | Wall | Against go-fast-odf | CPU | Peak memory | Failed | Median | 95th | 99th | Slowest file |
 |---|---|---|---|---|---|---|---|---|---|
-| **go-fast-odf** | 0.05 s |  | 0.5 s | 120 MB | 0 | 5.35 ms | 27.91 ms | 36.84 ms | 42 ms |
-| odfpy (Python) | 0.84 s | 16.08 times | 7.6 s | 1,486 MB | 2 | 57.78 ms | 413.57 ms | 594.85 ms | 694 ms |
+| **go-fast-odf** | 0.04 s |  | 0.4 s | 119 MB | 0 | 4.79 ms | 24.37 ms | 25.83 ms | 29 ms |
+| odfpy (Python) | 0.84 s | 20.63 times | 7.6 s | 1,486 MB | 2 | 57.78 ms | 413.57 ms | 594.85 ms | 694 ms |
 
 Kreuzberg does not read ODP; no tool used here besides odfpy does.
 
@@ -125,7 +125,7 @@ Go's garbage collector can be given more memory for less work with `GOGC` in the
 
 | `GOGC` | One worker | Peak | 24 workers | Peak |
 |---|---|---|---|---|
-| 100 (default) | 0.27 s | 30 MB | 0.05 s | 120 MB |
-| 200 | 0.27 s | 35 MB | 0.05 s | 130 MB |
-| 400 | 0.25 s | 51 MB | 0.05 s | 156 MB |
+| 100 (default) | 0.22 s | 25 MB | 0.04 s | 95 MB |
+| 200 | 0.19 s | 34 MB | 0.04 s | 157 MB |
+| 400 | 0.20 s | 50 MB | 0.04 s | 135 MB |
 

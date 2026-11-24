@@ -9,12 +9,12 @@ The tables are in [`comparison.md`](comparison.md). This file says what they sho
 
 ## What the comparison shows
 
-The inputs are ODT, ODS and ODP files found in Common Crawl and kept as served. The go-fast-odf figures are for main after #18 (commit 461e740); its output is byte-identical to v0.2.0's.
+The inputs are ODT, ODS and ODP files found in Common Crawl and kept as served. The go-fast-odf figures are for v0.2.2 (go-fast-core v0.1.6), measured on 2026-11-24; the other tools' are from 2026-11-23. Every file gives the same text, or the same error, as with the earlier figures (commit 461e740, after #18), whose output was byte-identical to v0.2.0's.
 
 **ODT** (2,457 files, 197 MB)
-- **Speed.** go-fast-odf takes 2.24 s with one worker and 0.38 s with 24.
-  - Kreuzberg is level: 2.33 s and 0.37 s.
-  - odfpy is 23 times slower and pandoc (one process per file) 102 times.
+- **Speed.** go-fast-odf takes 1.70 s with one worker and 0.24 s with 24 (2.24 s and 0.38 s in the earlier figures).
+  - Kreuzberg takes 2.33 s and 0.37 s, 1.4 and 1.5 times as long.
+  - odfpy is 31 times slower and pandoc (one process per file) 135 times.
 - **Accuracy.** Against LibreOffice's text export of 285 files, go-fast-odf has the highest F1:
 
   | Tool | F1 |
@@ -25,15 +25,15 @@ The inputs are ODT, ODS and ODP files found in Common Crawl and kept as served. 
   | Kreuzberg | 0.717 |
 
   Kreuzberg's recall is 0.632: it leaves out much of the text the reference holds.
-- **Memory.** go-fast-odf peaks at 35 MB with one worker and 120 MB with 24. With 24 workers, Kreuzberg peaks at 1.4 GB, odfpy at 2.2 GB and pandoc at 5.2 GB.
+- **Memory.** go-fast-odf peaks at 43 MB with one worker and 175 MB with 24 (35 MB and 120 MB in the earlier figures). With 24 workers, Kreuzberg peaks at 1.4 GB, odfpy at 2.2 GB and pandoc at 5.2 GB.
 - **Failures.** go-fast-odf failed on none. Kreuzberg failed on 1, pandoc on 15 and odfpy on 19.
 
 **ODS** (1,265 files, 87 MB)
-- **Speed.** go-fast-odf takes 5.54 s with one worker and 0.98 s with 24.
+- **Speed.** go-fast-odf takes 4.99 s with one worker and 0.86 s with 24 (5.54 s and 0.98 s in the earlier figures).
   - The `calamine` crate is faster: 3.39 s and 0.61 s. In this harness it reads the cells' values only.
   - go-fast-odf also gives each table's merged cells and its hidden rows and columns, and the notes, each at its cell's address.
-  - Kreuzberg is 2.2 and 2.5 times slower than go-fast-odf, odfpy and pandas about 50 times.
-- **Memory.** With 24 workers, go-fast-odf peaks at 402 MB. The others peak at:
+  - Kreuzberg is 2.5 and 2.9 times slower than go-fast-odf, odfpy and pandas 56 to 63 times.
+- **Memory.** With 24 workers, go-fast-odf peaks at 392 MB. The others peak at:
   - calamine: 1.6 GB;
   - Kreuzberg: 3.8 GB;
   - odfpy and pandas: 10.6 and 11.6 GB.
@@ -46,7 +46,7 @@ The inputs are ODT, ODS and ODP files found in Common Crawl and kept as served. 
 - **Earlier version.** Before #18, ODS took 8.52 s and 2.00 s. Its allocation (11.3 GB for the batch) kept the 24 workers waiting on the garbage collector.
 
 **ODP** (61 files, 61 MB)
-- go-fast-odf takes 0.27 s and 0.05 s; odfpy takes 5.43 s and 0.84 s and fails on 2 files.
+- go-fast-odf takes 0.22 s and 0.04 s; odfpy takes 5.43 s and 0.84 s and fails on 2 files.
 - Kreuzberg does not read ODP.
 
 ## `GOGC`
@@ -55,15 +55,15 @@ Go's garbage collector can be given more memory for less work, with `GOGC` in th
 
 | Set | `GOGC` | One worker | 24 workers |
 |---|---|---|---|
-| ODT | 100 (default) | 2.24 s (35 MB) | 0.38 s (120 MB) |
-| ODT | 200 | 2.08 s (58 MB) | 0.29 s (231 MB) |
-| ODT | 400 | 2.00 s (86 MB) | 0.27 s (472 MB) |
-| ODS | 100 (default) | 5.54 s (232 MB) | 0.98 s (402 MB) |
-| ODS | 200 | 5.33 s (344 MB) | 0.92 s (456 MB) |
-| ODS | 400 | 5.19 s (344 MB) | 0.84 s (764 MB) |
-| ODP | 100 (default) | 0.27 s (30 MB) | 0.05 s (120 MB) |
-| ODP | 200 | 0.27 s (35 MB) | 0.05 s (130 MB) |
-| ODP | 400 | 0.25 s (51 MB) | 0.05 s (156 MB) |
+| ODT | 100 (default) | 1.70 s (39 MB) | 0.26 s (177 MB) |
+| ODT | 200 | 1.63 s (40 MB) | 0.23 s (273 MB) |
+| ODT | 400 | 1.56 s (91 MB) | 0.20 s (473 MB) |
+| ODS | 100 (default) | 4.94 s (242 MB) | 0.87 s (438 MB) |
+| ODS | 200 | 4.79 s (239 MB) | 0.80 s (569 MB) |
+| ODS | 400 | 4.68 s (466 MB) | 0.77 s (871 MB) |
+| ODP | 100 (default) | 0.22 s (25 MB) | 0.04 s (95 MB) |
+| ODP | 200 | 0.19 s (34 MB) | 0.04 s (157 MB) |
+| ODP | 400 | 0.20 s (50 MB) | 0.04 s (135 MB) |
 
 ## How it is measured
 
