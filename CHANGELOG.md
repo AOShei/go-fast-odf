@@ -3,7 +3,7 @@
 All notable changes to go-fast-odf are recorded here, in the style of
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## Unreleased
+## v0.2.2 (2026-11-24)
 
 - **A zip archive cut short is recovered by go-fast-core's `ziprecover`**
   (go-fast-core v0.1.6, was v0.1.5), which is the recovery this library
