@@ -3,6 +3,17 @@
 All notable changes to go-fast-odf are recorded here, in the style of
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## Unreleased
+
+- **A zip archive cut short is recovered by go-fast-core's `ziprecover`**
+  (go-fast-core v0.1.6, was v0.1.5), which is the recovery this library
+  had copied from go-fast-ooxml, now shared by every go-fast library. The
+  copy (`internal/odpkg/recover.go`) is gone, and `input.repaired` is
+  worded by core, with the same text. JSON, text and errors are
+  byte-identical on 3,783 ODF files, whole and cut at four places. Core's
+  version also recovers two cases this copy did not: a file cut just after
+  a zip stored in it, and stored members whose sizes follow their data.
+
 ## v0.2.1 (2026-11-24)
 
 The tag v0.2.1 was made after the change to go-fast-core's `inflate`

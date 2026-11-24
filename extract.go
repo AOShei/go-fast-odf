@@ -317,13 +317,7 @@ func (e *Extractor) Extract(ctx context.Context, r io.ReaderAt, size int64, opts
 			"the package's members were encrypted with "+pkg.Scheme(name)+", and were decrypted with the password given")
 	}
 	if rec := pkg.Recovered(); rec != nil {
-		msg := fmt.Sprintf("the archive's directory cannot be read: the file is cut short or damaged. %d members were found by their own headers", rec.Members)
-		if rec.Cut != "" {
-			msg += "; the last, " + clean.Label(rec.Cut) + ", breaks off"
-		} else {
-			msg += "; any that followed are lost"
-		}
-		warn(gofastcore.SeverityWarning, gofastcore.WarnInputRepaired, msg)
+		warn(gofastcore.SeverityWarning, gofastcore.WarnInputRepaired, rec.Message(clean.Label))
 	}
 	if n := pkg.Ambiguous(); n > 0 {
 		warn(gofastcore.SeverityWarning, gofastcore.WarnInputAmbiguous, fmt.Sprintf("%d archive members are named twice or share a name; programs differ in which they read", n))

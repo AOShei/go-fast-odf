@@ -10,7 +10,6 @@ the same MIT License. Each copied file says so in its first lines:
   internal/clean/clean.go, clean_test.go
                                (go-fast-ooxml internal/clean)
   internal/display/display.go  (go-fast-ooxml internal/hidden)
-  internal/odpkg/recover.go    (go-fast-ooxml internal/opc/recover.go)
 
 Argon2id and BLAKE2b (internal/argon2) are written from RFC 9106 and
 RFC 7693, and Blowfish (internal/blowfish) from Schneier's description.
