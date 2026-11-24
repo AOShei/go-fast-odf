@@ -207,4 +207,4 @@ Drawings (`.odg`, `.otg`, `.fodg`), charts (`.odc`), formulas (`.odf`), images (
 
 ## Provenance
 
-The XML scanner, text cleaning, display-span settling and zip recovery are copied from go-fast-ooxml (same author and licence); see `NOTICE`.
+The XML scanner, text cleaning and display-span settling are copied from go-fast-ooxml (same author and licence); see `NOTICE`. Zip recovery is go-fast-core's `ziprecover`.

@@ -5,8 +5,8 @@
 //
 // It is the only place the library touches the archive, so it is where the
 // limits on decompression are enforced. The approach (a budget charged per
-// byte read, recovery of an archive whose directory is lost) is that of
-// go-fast-ooxml's internal/opc.
+// byte read) is that of go-fast-ooxml's internal/opc; an archive whose
+// directory is lost is recovered by go-fast-core's ziprecover.
 package odpkg
 
 import (
@@ -21,7 +21,7 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/AOShei/go-fast-core/inflate"
+	"github.com/AOShei/go-fast-core/ziprecover"
 	"github.com/AOShei/go-fast-odf/internal/clean"
 	"github.com/AOShei/go-fast-odf/internal/ns"
 	number "github.com/AOShei/go-fast-odf/internal/num"
@@ -95,7 +95,7 @@ type Package struct {
 	names     []string
 	budget    atomic.Int64
 	ambiguous int
-	recovered *Recovery
+	recovered *ziprecover.Recovery
 	synced    int64       // the budget as it stood at the last Sync
 	flat      io.ReaderAt // a flat file, or nil
 	flatSize  int64
@@ -123,24 +123,20 @@ var errManifestFull = errors.New("odpkg: manifest has more entries than are read
 
 // Open reads the archive's directory, the mimetype member and the manifest.
 func Open(r io.ReaderAt, size int64, lim Limits) (*Package, error) {
-	zr, err := zip.NewReader(r, size)
-	var recovered *Recovery
-	if err != nil {
-		var head [4]byte
-		if n, _ := r.ReadAt(head[:], 0); n != len(head) || string(head[:]) != "PK\x03\x04" {
-			return nil, fmt.Errorf("%w: %v", ErrNotZip, err)
-		}
-		var rerr error
-		switch zr, recovered, rerr = recoverArchive(r, size, lim); {
-		case errors.Is(rerr, ErrBudget), errors.Is(rerr, ErrTooManyParts):
-			return nil, rerr
-		case rerr != nil:
-			return nil, ErrCutOff
-		}
+	// go-fast-core's ziprecover reads the directory, or, for a file cut
+	// short, finds the members by their own headers and makes one;
+	// deflated members are read with go-fast-core's inflate.
+	zr, recovered, err := ziprecover.Open(r, size, ziprecover.Limits{MaxMembers: lim.MaxMembers, MaxDecodedBytes: lim.MaxDecodedBytes})
+	switch {
+	case errors.Is(err, ziprecover.ErrNotZip):
+		return nil, fmt.Errorf("%w: %v", ErrNotZip, err)
+	case errors.Is(err, ziprecover.ErrBudget):
+		return nil, ErrBudget
+	case errors.Is(err, ziprecover.ErrTooManyMembers):
+		return nil, ErrTooManyParts
+	case err != nil:
+		return nil, ErrCutOff
 	}
-	// Deflated members are read with go-fast-core's inflate, about twice
-	// as fast as compress/flate.
-	zr.RegisterDecompressor(zip.Deflate, inflate.Decompressor)
 	if lim.MaxMembers > 0 && len(zr.File) > lim.MaxMembers {
 		return nil, fmt.Errorf("%w: %d, limit %d", ErrTooManyParts, len(zr.File), lim.MaxMembers)
 	}
@@ -292,7 +288,7 @@ func (p *Package) MIME() string { return p.mime }
 
 // Recovered returns what was found by the members' own headers, if the
 // archive had no directory that could be read; nil for a sound archive.
-func (p *Package) Recovered() *Recovery { return p.recovered }
+func (p *Package) Recovered() *ziprecover.Recovery { return p.recovered }
 
 // Ambiguous returns the number of members that programs disagree about.
 func (p *Package) Ambiguous() int { return p.ambiguous }
