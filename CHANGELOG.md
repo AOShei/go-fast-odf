@@ -3,6 +3,18 @@
 All notable changes to go-fast-odf are recorded here, in the style of
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## Unreleased
+
+- **Zip members are decompressed with go-fast-core's `inflate`**
+  (go-fast-core v0.1.5, was v0.1.4), about twice as fast as
+  `compress/flate`, and so are the members of an encrypted package. On
+  2,457 ODT files one worker takes 1.73–1.78 s instead of 2.03–2.07 s,
+  and 24 workers 0.25–0.26 s instead of 0.28–0.29 s; ODS 5.0 s instead of
+  5.2–5.4 s, ODP 0.22 s instead of 0.26 s (one worker). The peak with 24
+  workers is 10–25% higher (ODT 162–186 MB instead of 151–172). JSON and
+  text are byte-identical on 3,783 files. A damaged member keeps up to
+  32 KiB more of its text before the error.
+
 ## v0.2.1 (2026-11-24)
 
 - **go-fast-core v0.1.4** (was v0.1.2): `Document.Text` and `Markdown`
