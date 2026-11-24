@@ -1,4 +1,4 @@
-github.com/AOShei/go-fast-core v0.1.2 h1:9IILtCXcSsyZexxo2XupyCK9RJgx9s3k6NAH1og0cXs=
-github.com/AOShei/go-fast-core v0.1.2/go.mod h1:tb4zS0fiQj3cajROZQXB/R4gwiklGWMTNUb+rHbk28M=
-github.com/AOShei/go-fast-odf v0.2.1-0.20261123160357-461e740c972a h1:Mxzdd2k/TUVp6s7CzEfAr80M1RS4I6Zl8RUnfhJGOfI=
-github.com/AOShei/go-fast-odf v0.2.1-0.20261123160357-461e740c972a/go.mod h1:JYqwtiROsKuVO2tm9qEeY6eN4y24B+OGMH1bos+YA2o=
+github.com/AOShei/go-fast-core v0.1.6 h1:c3zN1ffivazMeL8klgWduk09CrSdLUFGVUeHHvDHa6M=
+github.com/AOShei/go-fast-core v0.1.6/go.mod h1:tb4zS0fiQj3cajROZQXB/R4gwiklGWMTNUb+rHbk28M=
+github.com/AOShei/go-fast-odf v0.2.2 h1:MpH7kJCpaqpxj+fDg569mlSX4MU8CeXBU+G1dTLAbZE=
+github.com/AOShei/go-fast-odf v0.2.2/go.mod h1:en65aqf5dP9SUCM2B77pLxCEvlLaHmQeY7TsYnNmKQo=
