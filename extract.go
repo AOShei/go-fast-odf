@@ -107,9 +107,11 @@ var _ gofastcore.Extractor = (*Extractor)(nil)
 
 // Formats lists the formats this library extracts, as they appear in
 // gofastcore.Source.Format. Templates and master documents are reported
-// as the format they are a variant of; flat XML files as fodt, fods and
-// fodp.
-func (e *Extractor) Formats() []string { return []string{"odt", "ods", "odp", "fodt", "fods", "fodp"} }
+// as the format they are a variant of; flat XML files as fodt, fods,
+// fodp and fodg.
+func (e *Extractor) Formats() []string {
+	return []string{"odt", "ods", "odp", "odg", "fodt", "fods", "fodp", "fodg"}
+}
 
 // Extract reads an OpenDocument file with default settings. It is
 // (&Extractor{}).Extract.
@@ -186,16 +188,18 @@ var kinds = map[string]string{
 }
 
 // read are the formats this version reads.
-var read = map[string]bool{"odt": true, "ods": true, "odp": true, "fodt": true, "fods": true, "fodp": true}
+var read = map[string]bool{"odt": true, "ods": true, "odp": true, "odg": true, "fodt": true, "fods": true, "fodp": true, "fodg": true}
 
 // mimeOf gives the media type of a format, for a file that does not say.
 var mimeOf = map[string]string{
 	"odt":  "application/vnd.oasis.opendocument.text",
 	"ods":  "application/vnd.oasis.opendocument.spreadsheet",
 	"odp":  "application/vnd.oasis.opendocument.presentation",
+	"odg":  "application/vnd.oasis.opendocument.graphics",
 	"fodt": "application/vnd.oasis.opendocument.text-flat-xml",
 	"fods": "application/vnd.oasis.opendocument.spreadsheet-flat-xml",
 	"fodp": "application/vnd.oasis.opendocument.presentation-flat-xml",
+	"fodg": "application/vnd.oasis.opendocument.graphics-flat-xml",
 }
 
 // Extract reads size bytes from r and returns the document.
@@ -210,7 +214,7 @@ var mimeOf = map[string]string{
 //     damaged to read.
 //   - ErrUnsupported: a zip archive or XML document that is not
 //     OpenDocument; an OpenDocument file of a kind this version does not
-//     read (drawings, charts, formulas, images, databases, the
+//     read (charts, formulas, images, databases, the
 //     OpenOffice.org 1 formats sxw, sxc, sxi, sxd, sxm, sxg and their
 //     templates); a file whose media type is not OpenDocument's and whose
 //     content.xml has no OpenDocument body; an encryption this version does not decrypt
@@ -366,7 +370,7 @@ func (e *Extractor) Extract(ctx context.Context, r io.ReaderAt, size int64, opts
 		}
 		return nil, wrap(err)
 	}
-	byBody := map[string]string{"text": "odt", "": "odt", "spreadsheet": "ods", "presentation": "odp"}
+	byBody := map[string]string{"text": "odt", "": "odt", "spreadsheet": "ods", "presentation": "odp", "drawing": "odg"}
 	if !known {
 		if res.Kind == "" && !res.Failed {
 			// Neither the media type nor the content says what the file
@@ -392,6 +396,8 @@ func (e *Extractor) Extract(ctx context.Context, r io.ReaderAt, size int64, opts
 			res.Parts[0].Kind = gofastcore.PartSheet
 		case "odp":
 			res.Parts[0].Kind = gofastcore.PartSlide
+		case "odg":
+			res.Parts[0].Kind = gofastcore.PartPage
 		}
 	} else if strings.TrimPrefix(format, "f") != byBody[res.Kind] {
 		return nil, fmt.Errorf("gofastodf: a %s file whose body is office:%s: %w", format, res.Kind, gofastcore.ErrMalformed)

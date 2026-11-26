@@ -10,7 +10,7 @@ if err != nil { ... }
 fmt.Println(doc.Markdown())
 ```
 
-**Status: v0.2.2 (2026-11-24).** Text documents (`.odt`, with the template `.ott`, master documents `.odm` and `.otm`, and web pages `.oth`), spreadsheets (`.ods`, `.ots`), presentations (`.odp`, `.otp`), and the flat XML variants (`.fodt`, `.fods`, `.fodp`) are read. Password-protected packages are decrypted (AES-CBC with PBKDF2; ODF 1.4's AES-GCM with Argon2id; Blowfish CFB of ODF 1.0 and 1.1). Drawings, charts, formulas, images and databases as documents in their own right, and the OpenOffice.org 1 formats, give `ErrUnsupported`.
+**Status: v0.2.2 (2026-11-24).** Text documents (`.odt`, with the template `.ott`, master documents `.odm` and `.otm`, and web pages `.oth`), spreadsheets (`.ods`, `.ots`), presentations (`.odp`, `.otp`), drawings (`.odg`, `.otg`), and the flat XML variants (`.fodt`, `.fods`, `.fodp`, `.fodg`) are read. Password-protected packages are decrypted (AES-CBC with PBKDF2; ODF 1.4's AES-GCM with Argon2id; Blowfish CFB of ODF 1.0 and 1.1). Charts, formulas, images and databases as documents in their own right, and the OpenOffice.org 1 formats, give `ErrUnsupported`.
 
 **Speed and memory.** Against the Python and Rust tools in use, on files from Common Crawl, see [`bench/`](bench/README.md). Go's garbage collector can be given more memory for less work with `GOGC` in the environment (or `debug.SetGCPercent` in a program); the library and its command keep Go's default, 100. Each file read from disk as a pipeline does (wall time, peak memory):
 
@@ -29,9 +29,9 @@ fmt.Println(doc.Markdown())
 ## API
 
 - `Extract(ctx, r io.ReaderAt, size, opts)`, `ExtractFile(ctx, path, opts)`, `ExtractBytes(ctx, data, opts)`.
-- `Extractor{MaxArchiveMembers, MaxCells}` implements `gofastcore.Extractor`; its zero value is ready and safe for concurrent use. `Formats()` is `odt ods odp fodt fods fodp`.
+- `Extractor{MaxArchiveMembers, MaxCells}` implements `gofastcore.Extractor`; its zero value is ready and safe for concurrent use. `Formats()` is `odt ods odp odg fodt fods fodp fodg`.
 
-The format is decided from the file (a package's `mimetype` member or manifest root entry, a flat file's `office:mimetype`, or the body element of the content), never from the file name. A flat file is reported as `fodt`, `fods` or `fodp` with the flat-XML media type, whatever kind its `office:mimetype` names.
+The format is decided from the file (a package's `mimetype` member or manifest root entry, a flat file's `office:mimetype`, or the body element of the content), never from the file name. A flat file is reported as `fodt`, `fods`, `fodp` or `fodg` with the flat-XML media type, whatever kind its `office:mimetype` names.
 
 ## Command
 
@@ -44,11 +44,11 @@ gofastodf [flags] file-or-directory...
   -max-cells N  -max-decoded-bytes N  -max-text-bytes N  -o file  -quiet  -version
 ```
 
-A directory stands for the files in it and below it whose names end in `.odt`, `.ott`, `.odm`, `.ods`, `.ots`, `.odp`, `.otp`, `.fodt`, `.fods` or `.fodp` (in any case), LibreOffice's `.~lock.` files left out; other files in it are not read, `.otm` and `.oth` among them. A file named on the command line is read whatever its name. With one input the JSON is indented; with several, each document is one line.
+A directory stands for the files in it and below it whose names end in `.odt`, `.ott`, `.odm`, `.ods`, `.ots`, `.odp`, `.otp`, `.odg`, `.otg`, `.fodt`, `.fods`, `.fodp` or `.fodg` (in any case), LibreOffice's `.~lock.` files left out; other files in it are not read, `.otm` and `.oth` among them. A file named on the command line is read whatever its name. With one input the JSON is indented; with several, each document is one line.
 
 Documents go to standard output; warnings of severity error go to standard error; the exit status is 1 if any input could not be read, 2 for a usage error. `-password` is also tried on embedded documents. `-version` prints the module version the command was built from.
 
-The command reads embedded documents: an object whose media type is one of the OpenDocument formats this library reads (`application/vnd.oasis.opendocument.text`, `-spreadsheet`, `-presentation`, their templates, master and web variants and flat forms) is extracted with this library, as deep as core's `Limits.MaxDepth` (default 4) allows. Anything else (an OLE object, a drawing) is listed in `Children` with `child.unsupported` and not read.
+The command reads embedded documents: an object whose media type is one of the OpenDocument formats this library reads (`application/vnd.oasis.opendocument.text`, `-spreadsheet`, `-presentation`, `-graphics`, their templates, master and web variants and flat forms) is extracted with this library, as deep as core's `Limits.MaxDepth` (default 4) allows. Anything else (an OLE object, for one) is listed in `Children` with `child.unsupported` and not read.
 
 The render flags are the series' shared ones (`COMMAND_FLAGS.md` in the workspace) and affect Markdown and text only; JSON always has everything:
 
@@ -109,10 +109,20 @@ One part of kind `sheet` per `table:table`, `Name` the sheet name, `Display` `hi
 
 One part of kind `slide` per `draw:page`. `Name` is the text of the title frame (`presentation:class="title"`), else the page's `draw:name`. `Display` `hidden` when the page's drawing-page style says `presentation:visibility="hidden"`.
 
-- Frames, shapes and groups are put in reading order: the title first, then from top to bottom (`svg:y`) and, at one height, left to right (`svg:x`); an item with no position keeps the place of the one before it.
+- Frames, shapes and groups are put in reading order: the title first, then from top to bottom (`svg:y`) and, at one height, left to right (`svg:x`); a line, connector or measure, which has no `svg:x` and `svg:y`, stands at its start point (`svg:x1`, `svg:y1`); an item with no position keeps the place of the one before it.
 - The title's paragraphs are `heading` level 1. Footer, date-time and page-number placeholders are `footer` blocks, header placeholders `header` blocks. Other text is paragraphs and list items as in a text document.
 - **Master-page text.** The shapes of a slide's master page (`draw:master-page-name` → `style:master-page` in styles.xml) that are not placeholders (no `presentation:class`, not `presentation:placeholder="true"`) are given on every slide that uses the master and shows its objects, before its notes, in reading order, as go-fast-ooxml gives a layout's and master's own text. A slide whose drawing-page style (or a parent of it) declares `presentation:background-objects-visible="false"` does not show them and gets none. A hidden slide's copy is hidden with the slide. The text of a master is on every slide that uses it, so a long master and many slides can ask for much more than the file holds: each copy is charged to the text budget, at most 2^20 blocks are repeated in this way over a presentation, and each slide past that says so with `limit.exceeded`, the first with the number of slides left without their copy. What a bound leaves out of a master's own content is said on each slide that shows it, in the one warning that slide gives for that bound; an embedded document or picture it leaves out is said once, on the document. Their text is `header` if the shape starts in the upper half of the master's page layout (`fo:page-height`; 15.75 cm when none is given), `footer` if in the lower; pictures and tables keep their kinds. The master's placeholders (title, outline, header, footer, date-time, page-number) and its notes master are not content. Masters no slide uses are not read.
 - **Speaker notes** (`presentation:notes`) are one `note` block of type `speaker` at the end of the slide.
+
+## How a drawing maps
+
+A drawing (`office:drawing`, written by LibreOffice Draw) holds the same `draw:page` elements as a presentation and is read the same way, with these differences:
+
+- One part of kind `page` per `draw:page`; `Name` is the page's `draw:name` (LibreOffice names them `page1`, `page2`, ... unless renamed).
+- Shapes have no placeholder classes, so there is no title heading and no header or footer placeholder: every shape's text is paragraphs and list items, in the reading order above (top to bottom, then left to right; a connector at its start point; the shapes of a group in the group's place).
+- The master page's own shapes are given on each page that uses it, as for slides, `header` or `footer` by the half of the master's page layout they start in (29.7 cm, LibreOffice's A4 page, when the layout gives no height).
+- A shape on a layer with `draw:display="none"` is `hidden`, as on slides. A layer shown only on screen or only in print (`screen`, `printer`) says nothing about whether its shapes can be seen, and its shapes are given with no display reason.
+- 3D scenes (`dr3d:scene`) have no text and give nothing.
 
 ## Flat files
 
@@ -181,7 +191,7 @@ Fixed bounds that can leave content out say so with `limit.exceeded` (severity e
 
 ## Corpus test
 
-`TestCorpus` runs every odt, ods, odp and flat file of the public corpus (`GOFAST_CORPUS`, else `../.testdata/corpus`; skipped when absent) under `dev/` and `heldout/`, each with a 10 s limit, 32 MiB of text and 512 MiB of decompression, and logs a tally per set (files, results and errors by kind, blocks and files by display reason, warnings by code). It fails on a panic, a Validate failure or a timeout. With `-v` it also lists each display reason in `dev/` files with an excerpt. Held-out files are counted, never shown.
+`TestCorpus` runs every odt, ods, odp, odg and flat file of the public corpus (`GOFAST_CORPUS`, else `../.testdata/corpus`; skipped when absent) under `dev/` and `heldout/`, each with a 10 s limit, 32 MiB of text and 512 MiB of decompression, and logs a tally per set (files, results and errors by kind, blocks and files by display reason, warnings by code). It fails on a panic, a Validate failure or a timeout. With `-v` it also lists each display reason in `dev/` files with an excerpt. Held-out files are counted, never shown.
 
 ## Fuzzing
 
@@ -189,7 +199,7 @@ Fixed bounds that can leave content out say so with `limit.exceeded` (severity e
 go test -run '^$' -fuzz '^FuzzContent$' -fuzztime=20s .
 ```
 
-Targets: `FuzzExtract` (whole files), `FuzzContent`, `FuzzSheet`, `FuzzSlides`, `FuzzStyles`, `FuzzMeta`, `FuzzManifest`, `FuzzFlat`, and in `internal/odpkg` `FuzzEncryptionData` (a manifest's `manifest:encryption-data` and the encrypted member's bytes, with the key-derivation caps lowered so each input is cheap). The input of a stream target (all but `FuzzExtract` and `FuzzEncryptionData`) is the inside of a stream's root element (the target writes the root and its namespace declarations), and the packages it builds store their members uncompressed. Both matter: the fuzzing engine minimises each input that finds new coverage at a cost that grows with the square of its length, and with whole streams of 1–2 KB in compressed packages a worker spent nearly all its time minimising. `TestMutations` runs a seeded set of mutations of every target of the root package under plain `go test`.
+Targets: `FuzzExtract` (whole files), `FuzzContent`, `FuzzSheet`, `FuzzSlides`, `FuzzDrawing`, `FuzzStyles`, `FuzzMeta`, `FuzzManifest`, `FuzzFlat`, and in `internal/odpkg` `FuzzEncryptionData` (a manifest's `manifest:encryption-data` and the encrypted member's bytes, with the key-derivation caps lowered so each input is cheap). The input of a stream target (all but `FuzzExtract` and `FuzzEncryptionData`) is the inside of a stream's root element (the target writes the root and its namespace declarations), and the packages it builds store their members uncompressed. Both matter: the fuzzing engine minimises each input that finds new coverage at a cost that grows with the square of its length, and with whole streams of 1–2 KB in compressed packages a worker spent nearly all its time minimising. `TestMutations` runs a seeded set of mutations of every target of the root package under plain `go test`.
 
 ## Embedded objects and form controls
 
@@ -198,12 +208,12 @@ In every kind of document, `draw:object` and `draw:object-ole` in a frame are re
 - **Formulas** (a sub-document `Object N/` whose `content.xml` is MathML, or `math:math` held in the element in a flat file) become a `formula` block, `Attrs["notation"]="plain"`. The text is **converted from the MathML**: tokens as written, `a^b`, `a_b`, `(a)/(b)`, `sqrt(x)`, `root(x, n)`, fences as `( , )`, matrix rows separated by `;`. LibreOffice's StarMath source, from `<annotation encoding="StarMath 5.0">`, is kept in `Attrs["starmath"]`, and is the text when the MathML gives none.
 - **Charts** (a sub-document with `chart:chart`) give a `caption` block with the chart's title, then a `table` block of the data the chart keeps in its own table (header rows as `HeaderRows`), with `Attrs`: `role=chart`, `chart` the chart class (`bar`, `line`, ...), `x_axis` and `y_axis` the axis titles, `name` the frame's name.
 - When a formula or chart became blocks, the frame's replacement picture (`ObjectReplacements/Object N`) is not given: it is a drawing of the same thing.
-- **Other sub-documents** (a text document or spreadsheet embedded in another) are packed as a package of their own (members stored, `mimetype` first, the media type from the manifest or else from its body element) and handed to `Options.ExtractChild`; **OLE objects** (`draw:object-ole`, a member such as `Object 4`) are handed on as stored, with the manifest's media type. Each appears in `Document.Children`, extracted or listed. The decompression budget is settled with the shared budget before and after each. Linked objects (an address outside the package) are counted in `input.external_reference` and not fetched.
+- **Other sub-documents** (a text document, spreadsheet, presentation or drawing embedded in another) are packed as a package of their own (members stored, `mimetype` first, the media type from the manifest or else from its body element) and handed to `Options.ExtractChild`; **OLE objects** (`draw:object-ole`, a member such as `Object 4`) are handed on as stored, with the manifest's media type. Each appears in `Document.Children`, extracted or listed. The decompression budget is settled with the shared budget before and after each. Linked objects (an address outside the package) are counted in `input.external_reference` and not fetched.
 - **Form controls** (`office:forms`, placed by `draw:control`) give a paragraph where they stand: label and value as `label: value` (a check box's value is `checked`), `Attrs["field"]` the control's name and `Attrs["control"]` its kind; a list box or combo box also gives a `choices` note of its options. Controls that no `draw:control` places go to the `stored` part with `stored=form_field`. Form values are data: the values of hidden controls, password fields and unplaced controls are extracted with no display reason. A placed control is `hidden` when its `draw:control` declares `draw:display="none"` or stands on a layer with `draw:display="none"`; that is the only switch ODF 1.3 gives a placed control (`form:printable` concerns printing only and is not read; the graphic style of a control has no display property).
 
 ## Not read
 
-Drawings (`.odg`, `.otg`, `.fodg`), charts (`.odc`), formulas (`.odf`), images (`.odi`) and databases (`.odb`) as documents in their own right (`ErrUnsupported`); documents held whole inside a flat file's `draw:object` (`odf.unread_content`); change-tracked insertions are not marked in the text. The OpenOffice.org 1 formats (`.sxw`, `.sxc`, `.sxi`, `.sxd`, `.sxm`, `.sxg` and the templates `.stw`, `.stc`, `.sti`, `.std`) are refused (`ErrUnsupported`).
+Charts (`.odc`), formulas (`.odf`), images (`.odi`) and databases (`.odb`) as documents in their own right (`ErrUnsupported`); documents held whole inside a flat file's `draw:object` (`input.unread_content`); change-tracked insertions are not marked in the text. The OpenOffice.org 1 formats (`.sxw`, `.sxc`, `.sxi`, `.sxd`, `.sxm`, `.sxg` and the templates `.stw`, `.stc`, `.sti`, `.std`) are refused (`ErrUnsupported`).
 
 ## Provenance
 
