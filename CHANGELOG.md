@@ -3,6 +3,13 @@
 All notable changes to go-fast-odf are recorded here, in the style of
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## Unreleased
+
+- **go-fast-core v0.1.10** (was v0.1.6). Of the core code this module
+  uses, the only change since v0.1.6 is two new stored kinds: `gofastodf
+  -stored=` now also accepts `shape_data` and `linked_data`, which Visio
+  drawings in go-fast-ooxml will use.
+
 ## v0.3.0 (2026-11-26)
 
 - **Drawings are read**: `.odg`, the template `.otg` and the flat `.fodg`
