@@ -10,7 +10,7 @@ if err != nil { ... }
 fmt.Println(doc.Markdown())
 ```
 
-**Status: v0.2.2 (2026-11-24).** Text documents (`.odt`, with the template `.ott`, master documents `.odm` and `.otm`, and web pages `.oth`), spreadsheets (`.ods`, `.ots`), presentations (`.odp`, `.otp`), drawings (`.odg`, `.otg`), and the flat XML variants (`.fodt`, `.fods`, `.fodp`, `.fodg`) are read. Password-protected packages are decrypted (AES-CBC with PBKDF2; ODF 1.4's AES-GCM with Argon2id; Blowfish CFB of ODF 1.0 and 1.1). Charts, formulas, images and databases as documents in their own right, and the OpenOffice.org 1 formats, give `ErrUnsupported`.
+**Status: v0.3.0 (2026-11-26).** Text documents (`.odt`, with the template `.ott`, master documents `.odm` and `.otm`, and web pages `.oth`), spreadsheets (`.ods`, `.ots`), presentations (`.odp`, `.otp`), drawings (`.odg`, `.otg`), and the flat XML variants (`.fodt`, `.fods`, `.fodp`, `.fodg`) are read. Password-protected packages are decrypted (AES-CBC with PBKDF2; ODF 1.4's AES-GCM with Argon2id; Blowfish CFB of ODF 1.0 and 1.1). Charts, formulas, images and databases as documents in their own right, and the OpenOffice.org 1 formats, give `ErrUnsupported`.
 
 **Speed and memory.** Against the Python and Rust tools in use, on files from Common Crawl, see [`bench/`](bench/README.md). Go's garbage collector can be given more memory for less work with `GOGC` in the environment (or `debug.SetGCPercent` in a program); the library and its command keep Go's default, 100. Each file read from disk as a pipeline does (wall time, peak memory):
 

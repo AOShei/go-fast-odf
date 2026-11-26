@@ -3,7 +3,7 @@
 All notable changes to go-fast-odf are recorded here, in the style of
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## Unreleased
+## v0.3.0 (2026-11-26)
 
 - **Drawings are read**: `.odg`, the template `.otg` and the flat `.fodg`
   (`office:drawing`, written by LibreOffice Draw). A drawing holds the
