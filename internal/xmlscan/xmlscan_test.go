@@ -125,6 +125,11 @@ func TestTokens(t *testing.T) {
 		{"reference in attribute stays", `<a x="1&#10;2"/>`, `<a@0 x@0="1\n2"> </a>`},
 		{"utf-8", `<a é="ü">日本語 😀</a>`, `<a@0 é@0="ü"> "日本語 😀" </a>`},
 		{"byte order mark", "\xEF\xBB\xBF<a/>", `<a@0> </a>`},
+		// A document type declaration that declares nothing is skipped.
+		{"doctype", `<!DOCTYPE a><a/>`, `<a@0> </a>`},
+		{"doctype lower case", `<!doctype a><a/>`, `<a@0> </a>`},
+		{"doctype with external DTD", "<?xml version=\"1.0\"?>\n<!DOCTYPE manifest:manifest PUBLIC \"-//OpenOffice.org//DTD Manifest 1.0//EN\" \"Manifest.dtd\">\n<a/>", `"\n\n" <a@0> </a>`},
+		{"doctype with > [ < in literals", `<!DOCTYPE a SYSTEM 'x>[<y'><a/>`, `<a@0> </a>`},
 		// Leniency: references that cannot be decoded are kept as written.
 		{"unknown entity", `<a>&nbsp;x</a>`, `<a@0> "&nbsp;x" </a>`},
 		{"bare ampersand", `<a>R&D & more</a>`, `<a@0> "R&D & more" </a>`},
@@ -257,9 +262,14 @@ func TestMalformed(t *testing.T) {
 		{"unterminated end tag", `<a></a`, ErrSyntax},
 		{"lone <", `<a><`, ErrSyntax},
 		{"unknown markup", `<a><!FOO></a>`, ErrSyntax},
-		{"doctype", `<!DOCTYPE a><a/>`, ErrDTD},
-		{"doctype lower case", `<!doctype a><a/>`, ErrDTD},
 		{"entity expansion attack", `<?xml version="1.0"?><!DOCTYPE lolz [<!ENTITY lol "lol"><!ENTITY lol2 "&lol;&lol;&lol;&lol;">]><lolz>&lol2;</lolz>`, ErrDTD},
+		{"internal subset after external DTD", `<!DOCTYPE a SYSTEM "a.dtd" [<!ENTITY e "x">]><a>&e;</a>`, ErrDTD},
+		{"empty internal subset", `<!DOCTYPE a []><a/>`, ErrDTD},
+		{"second doctype", `<!DOCTYPE a><!DOCTYPE a><a/>`, ErrDTD},
+		{"doctype in the root", `<a><!DOCTYPE a></a>`, ErrDTD},
+		{"doctype after the root", `<a/><!DOCTYPE a>`, ErrDTD},
+		{"unterminated doctype", `<!DOCTYPE a <a/>`, ErrSyntax},
+		{"doctype at end of input", `<!DOCTYPE a "x>`, ErrSyntax},
 		{"unsupported encoding", `<?xml version="1.0" encoding="EBCDIC"?><a/>`, ErrEncoding},
 	}
 	for _, c := range cases {
@@ -536,6 +546,14 @@ func TestResetReusesBuffers(t *testing.T) {
 	s.ResetBytes([]byte(`<a/>`), nil)
 	if out, err := dump(s); err != nil || out != `<a@0> </a>` {
 		t.Errorf("after an error: %s (%v)", out, err)
+	}
+	// Nor does a root element or a declaration already read: the next
+	// document may have its own declaration.
+	s.ResetBytes([]byte(`<!DOCTYPE a><a/>`), nil)
+	dump(s)
+	s.ResetBytes([]byte(`<!DOCTYPE b><b/>`), nil)
+	if out, err := dump(s); err != nil || out != `<b@0> </b>` {
+		t.Errorf("declaration after a reset: %s (%v)", out, err)
 	}
 }
 

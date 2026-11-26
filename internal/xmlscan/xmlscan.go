@@ -13,8 +13,10 @@
 //     it does not fit; a tag must fit, up to Options.MaxTokenBytes.
 //   - It resolves namespace prefixes to small numbers the caller chooses,
 //     so "is this w:p?" is an integer and a short byte comparison.
-//   - It refuses document type declarations, which removes entity-expansion
-//     attacks, and bounds nesting depth.
+//   - It refuses a document type declaration with an internal subset, the
+//     only place an entity can be declared, which removes entity-expansion
+//     attacks; one that only names the root element and an external DTD,
+//     which is never fetched, is skipped. It bounds nesting depth.
 //   - Attributes are found on demand, not built into a list.
 //
 // It checks what it needs to stay correct (tags match, markup is
@@ -68,7 +70,7 @@ const (
 // offset.
 var (
 	ErrSyntax        = errors.New("xmlscan: malformed XML")
-	ErrDTD           = errors.New("xmlscan: document type declarations are not accepted")
+	ErrDTD           = errors.New("xmlscan: a document type declaration with an internal subset, or out of place, is not accepted")
 	ErrDepth         = errors.New("xmlscan: elements nested too deeply")
 	ErrTokenTooLarge = errors.New("xmlscan: a tag is larger than the token limit")
 	ErrEncoding      = errors.New("xmlscan: unsupported character encoding")
@@ -158,7 +160,9 @@ type Scanner struct {
 	maxDepth int
 	maxToken int
 	recover  bool
-	closing  int // elements still to be closed by a recovered end tag
+	closing  int  // elements still to be closed by a recovered end tag
+	started  bool // the root element has begun
+	doctyped bool // a document type declaration has been skipped
 
 	// The current token.
 	kind       Kind
@@ -279,6 +283,7 @@ func (s *Scanner) reset(opts *Options) {
 	}
 	s.attrs, s.scratch, s.attrBuf = s.attrs[:0], s.scratch[:0], s.attrBuf[:0]
 	s.spaces, s.maxDepth, s.maxToken, s.recover, s.closing = nil, DefaultMaxDepth, DefaultMaxTokenBytes, false, 0
+	s.started, s.doctyped = false, false
 	if opts != nil {
 		s.spaces, s.recover = opts.Spaces, opts.Recover
 		if opts.MaxDepth > 0 {
@@ -674,8 +679,7 @@ func (s *Scanner) markup() scanStatus {
 			s.mode = modeCDATA
 			return skipped
 		case len(b) >= len(doctypeOpen) && bytes.EqualFold(b[:len(doctypeOpen)], doctypeOpen):
-			s.fail(fmt.Errorf("%w (at byte %d)", ErrDTD, s.Offset()))
-			return failed
+			return s.doctype(b)
 		case len(b) < len(cdataOpen) && !s.eof:
 			return needMore
 		}
@@ -683,6 +687,40 @@ func (s *Scanner) markup() scanStatus {
 		return failed
 	}
 	return s.startTag(b)
+}
+
+// doctype skips a document type declaration that declares nothing: one
+// before the root element, the only one, with no internal subset. It names
+// the root element and perhaps an external DTD, which is never fetched, so
+// skipping it changes nothing that is read. Any other is refused: an
+// internal subset is where entities are declared. b starts at "<!DOCTYPE".
+func (s *Scanner) doctype(b []byte) scanStatus {
+	if s.started || s.doctyped {
+		s.fail(fmt.Errorf("%w (at byte %d)", ErrDTD, s.Offset()))
+		return failed
+	}
+	var quote byte
+	for i := len(doctypeOpen); i < len(b); i++ {
+		switch c := b[i]; {
+		case quote != 0:
+			if c == quote {
+				quote = 0
+			}
+		case c == '"' || c == '\'':
+			quote = c
+		case c == '[':
+			s.fail(fmt.Errorf("%w (at byte %d)", ErrDTD, s.Offset()))
+			return failed
+		case c == '<':
+			s.syntax("unterminated document type declaration")
+			return failed
+		case c == '>':
+			s.doctyped = true
+			s.pos += i + 1
+			return skipped
+		}
+	}
+	return needMore
 }
 
 // repaired counts one repair made by Options.Recover and reports whether
@@ -896,6 +934,7 @@ func (s *Scanner) push(name []byte, colon int, declares bool) {
 resolved:
 	s.names = append(s.names, name...)
 	s.stack = append(s.stack, e)
+	s.started = true
 	s.qname = s.names[e.nameStart : e.nameStart+e.nameLen]
 	s.local = s.qname[e.colon+1:]
 	s.space = e.space

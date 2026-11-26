@@ -28,6 +28,18 @@ All notable changes to go-fast-odf are recorded here, in the style of
   `input.unread_content`, as a text document, spreadsheet or
   presentation held there already was; it was left out without a word.
 - `FuzzDrawing` fuzzes the content of a drawing; CI runs it.
+- **A document type declaration that declares nothing is skipped**, not
+  refused. Files written around 2005 open `META-INF/manifest.xml` and
+  embedded formulas with one (`<!DOCTYPE manifest:manifest PUBLIC "..."
+  "Manifest.dtd">`); the manifest was said `input.stream_damaged` and the
+  formula left unread (`input.unread_content`). A declaration with an
+  internal subset, the only place entities can be declared, is still
+  refused, as is one after the root element begins or a second one; an
+  external DTD is never fetched. In the public ODF corpus, in JSON with
+  and without cells, spans and images: 3 of 192 dev files (1 `.odt`, 2
+  `.odg`) lose the false warning and nothing else changes; 1 of 68
+  held-out files, an `.odt`, gains its formula; the rest are
+  byte-identical.
 
 ## v0.2.2 (2026-11-24)
 
