@@ -1,5 +1,5 @@
-// Command gofastodf extracts OpenDocument files (odt, ods, odp and the
-// flat fodt, fods, fodp) into the shared document model of the go-fast
+// Command gofastodf extracts OpenDocument files (odt, ods, odp, odg and
+// the flat fodt, fods, fodp, fodg) into the shared document model of the go-fast
 // libraries and prints them as JSON, Markdown or plain text.
 //
 //	gofastodf [flags] file-or-directory...
@@ -45,7 +45,7 @@ func main() {
 // The extensions of the files this command picks out of a directory.
 var extensions = map[string]bool{
 	".odt": true, ".ott": true, ".odm": true, ".ods": true, ".ots": true, ".odp": true, ".otp": true,
-	".fodt": true, ".fods": true, ".fodp": true,
+	".odg": true, ".otg": true, ".fodt": true, ".fods": true, ".fodp": true, ".fodg": true,
 }
 
 // childTypes are the media types of the embedded documents this command
@@ -62,9 +62,12 @@ var childTypes = map[string]bool{
 	"application/vnd.oasis.opendocument.spreadsheet-template":  true,
 	"application/vnd.oasis.opendocument.presentation":          true,
 	"application/vnd.oasis.opendocument.presentation-template": true,
+	"application/vnd.oasis.opendocument.graphics":              true,
+	"application/vnd.oasis.opendocument.graphics-template":     true,
 	"application/vnd.oasis.opendocument.text-flat-xml":         true,
 	"application/vnd.oasis.opendocument.spreadsheet-flat-xml":  true,
 	"application/vnd.oasis.opendocument.presentation-flat-xml": true,
+	"application/vnd.oasis.opendocument.graphics-flat-xml":     true,
 }
 
 // run is the command: it reads args and writes documents to stdout and

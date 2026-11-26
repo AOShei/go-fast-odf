@@ -62,6 +62,7 @@ jobs:
           go test -run '^$' -fuzz '^FuzzMeta$' -fuzztime 20s -fuzzminimizetime 0s .
           go test -run '^$' -fuzz '^FuzzSheet$' -fuzztime 20s -fuzzminimizetime 0s .
           go test -run '^$' -fuzz '^FuzzSlides$' -fuzztime 20s -fuzzminimizetime 0s .
+          go test -run '^$' -fuzz '^FuzzDrawing$' -fuzztime 20s -fuzzminimizetime 0s .
           go test -run '^$' -fuzz '^FuzzStyles$' -fuzztime 20s -fuzzminimizetime 0s .
           go test -run '^$' -fuzz '^FuzzEncryptionData$' -fuzztime 20s -fuzzminimizetime 0s ./internal/odpkg
 

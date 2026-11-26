@@ -3,6 +3,32 @@
 All notable changes to go-fast-odf are recorded here, in the style of
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## Unreleased
+
+- **Drawings are read**: `.odg`, the template `.otg` and the flat `.fodg`
+  (`office:drawing`, written by LibreOffice Draw). A drawing holds the
+  same `draw:page` elements as a presentation and is read the same way:
+  one part of kind `page` per page, named by its `draw:name`; its shapes
+  in reading order; the text of its master page on each page that shows
+  it, as `header` or `footer` by the half of the page it stands in (29.7
+  cm when the page layout gives no height); a shape on a layer with
+  `draw:display="none"` `hidden`. `Formats()` adds `odg` and `fodg`; a
+  drawing whose media type is not a standard one (one old producer wrote
+  `application/vnd.oasis.opendocument.drawing`) is known by its body. The
+  command walks `.odg`, `.otg` and `.fodg` in directories and reads
+  embedded drawings. See the README's "How a drawing maps".
+- **Reading order on slides and pages**: a line, connector or measure,
+  which has no `svg:x`/`svg:y`, stands at its start point
+  (`svg:x1`/`svg:y1`), and a group with no position of its own (as
+  LibreOffice writes groups) where the first shape in it with a position
+  stands; both used to take the place of the item before them. No
+  presentation in the public corpus changes (126 dev and 48 held-out
+  ODF files, byte-identical).
+- A drawing held whole in a flat file's `draw:object` is said with
+  `input.unread_content`, as a text document, spreadsheet or
+  presentation held there already was; it was left out without a word.
+- `FuzzDrawing` fuzzes the content of a drawing; CI runs it.
+
 ## v0.2.2 (2026-11-24)
 
 - **A zip archive cut short is recovered by go-fast-core's `ziprecover`**

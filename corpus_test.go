@@ -29,7 +29,7 @@ func TestCorpus(t *testing.T) {
 	if _, err := os.Stat(root); err != nil {
 		t.Skip("no corpus at", root)
 	}
-	formats := []string{"odt", "ods", "odp", "odf-flat"}
+	formats := []string{"odt", "ods", "odp", "odg", "odf-flat"}
 	for _, set := range []string{"dev", "heldout"} {
 		tally := newTally()
 		for _, format := range formats {

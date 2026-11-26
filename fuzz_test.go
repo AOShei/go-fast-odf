@@ -189,6 +189,11 @@ var (
 			`<office:body><office:presentation><draw:page draw:name="p" draw:style-name="d"><draw:frame presentation:class="title" svg:x="1cm" svg:y="1cm"><draw:text-box><text:p>T</text:p></draw:text-box></draw:frame>` +
 			`<draw:g><draw:custom-shape svg:y="3cm"><text:p>s</text:p></draw:custom-shape></draw:g><presentation:notes><draw:frame><draw:text-box><text:p>n</text:p></draw:text-box></draw:frame></presentation:notes></draw:page></office:presentation></office:body>`,
 	}
+	drawSeeds = []string{
+		`<office:automatic-styles/><office:body><office:drawing><draw:page draw:name="p" draw:master-page-name="M"><draw:custom-shape draw:layer="L" svg:x="1cm" svg:y="1cm"><text:p>s</text:p></draw:custom-shape>` +
+			`<draw:connector svg:x1="1cm" svg:y1="2cm"><text:p>c</text:p></draw:connector><draw:g><draw:rect svg:y="3cm"><text:p>r</text:p></draw:rect></draw:g>` +
+			`<draw:frame><draw:text-box><text:p>t</text:p></draw:text-box></draw:frame></draw:page><draw:page/></office:drawing></office:body>`,
+	}
 	flatSeeds = []string{
 		`<office:meta><dc:title>t</dc:title></office:meta><office:master-styles><style:master-page style:name="S"><style:footer><text:p>f</text:p></style:footer></style:master-page></office:master-styles>` +
 			`<office:body><office:text><text:p><draw:frame><draw:image><office:binary-data>iVBORw0KGgo=</office:binary-data></draw:image></draw:frame>x</text:p></office:text></office:body>`,
@@ -205,6 +210,9 @@ func FuzzSheet(f *testing.F) { fuzzStream(f, sheetMIME, contentStream, sheetSeed
 
 // FuzzSlides fuzzes the content of a presentation.
 func FuzzSlides(f *testing.F) { fuzzStream(f, slideMIME, contentStream, slideSeeds, richOpts) }
+
+// FuzzDrawing fuzzes the content of a drawing.
+func FuzzDrawing(f *testing.F) { fuzzStream(f, drawMIME, contentStream, drawSeeds, richOpts) }
 
 // FuzzFlat fuzzes a flat file.
 func FuzzFlat(f *testing.F) {
@@ -231,6 +239,7 @@ var fuzzCases = []fuzzCase{
 	{textMIME, manifestStream, manifestSeeds},
 	{sheetMIME, contentStream, sheetSeeds},
 	{slideMIME, contentStream, slideSeeds},
+	{drawMIME, contentStream, drawSeeds},
 }
 
 // TestMutations runs a fixed number of seeded random mutations of every

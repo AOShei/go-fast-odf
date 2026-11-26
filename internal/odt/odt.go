@@ -5,7 +5,8 @@
 // of its master pages; a spreadsheet (office:spreadsheet) as one part per
 // sheet, its used regions as tables; a presentation (office:presentation)
 // as one part per slide, with the text of its master page and its speaker
-// notes. Embedded formulas and charts become blocks, form controls
+// notes; a drawing (office:drawing) as one part per page, with the text
+// of its master page. Embedded formulas and charts become blocks, form controls
 // paragraphs, and other embedded documents children. Values the document
 // keeps and never shows go to the stored part.
 //
@@ -51,7 +52,7 @@ type Config struct {
 // Result is what reading the document gave.
 type Result struct {
 	// Kind is the body element's local name: "text", "spreadsheet",
-	// "presentation", or another this package does not read (Parts is
+	// "presentation", "drawing", or another this package does not read (Parts is
 	// then empty), or "" if the stream has no body.
 	Kind string
 	// Failed: content.xml could not be read as far as its body (it is
@@ -59,7 +60,7 @@ type Result struct {
 	// is not known.
 	Failed bool
 	// Parts are the body of a text document, the sheets of a spreadsheet,
-	// the slides of a presentation. Stored is the stored part, or nil.
+	// the slides of a presentation, the pages of a drawing. Stored is the stored part, or nil.
 	Parts  []gofastcore.Part
 	Stored *gofastcore.Part
 	// Children are the embedded documents handed to Options.Child.
@@ -102,6 +103,13 @@ type reader struct {
 	// each slide (by number) until its master's content is added, so
 	// that both are said in one warning per bound.
 	heldHits map[int][]capHit
+	// pages: the body is office:drawing, whose draw:page elements are
+	// pages, not slides.
+	pages bool
+	// groupAt, while a group with no position of its own is read on a
+	// slide or page, takes the position of the first shape in it that
+	// has one.
+	groupAt *groupPos
 
 	deletions map[string]*deletion
 	usedDel   map[string]bool
@@ -183,6 +191,9 @@ func Read(ctx context.Context, pkg *odpkg.Package, set *style.Set, opts *gofastc
 	case "spreadsheet":
 		res.Parts = r.spreadsheet(serr)
 	case "presentation":
+		res.Parts = r.presentation(serr)
+	case "drawing":
+		r.pages = true
 		res.Parts = r.presentation(serr)
 	case "text", "":
 		res.Parts = []gofastcore.Part{r.textBody(serr)}

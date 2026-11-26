@@ -40,6 +40,9 @@ var mimeByExt = map[string]string{
 // group, a link around drawings, or a shape, whose text is read as blocks.
 func (r *reader) drawing(c ctxt, dst *[]gofastcore.Block) {
 	s := &r.s
+	if g := r.groupAt; g != nil && !g.found {
+		g.x, g.y, g.found = r.position(g.x, g.y)
+	}
 	// A shape not displayed, by its own attribute or its layer's.
 	if r.attr(ns.Draw, "display") == "none" || r.set.LayerHidden(r.attr(ns.Draw, "layer")) {
 		c.hidden |= gofastcore.DisplayHidden

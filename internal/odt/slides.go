@@ -12,8 +12,13 @@ import (
 )
 
 // presentation reads office:presentation, which is current, into one
-// part per slide (draw:page).
+// part per slide (draw:page), or office:drawing into one part per page:
+// the two hold the same draw:page elements.
 func (r *reader) presentation(serr error) []gofastcore.Part {
+	kind, whole := gofastcore.PartSlide, "presentation"
+	if r.pages {
+		kind, whole = gofastcore.PartPage, "drawing"
+	}
 	var parts []gofastcore.Part
 	var uses []slideUse
 	r.heldHits = map[int][]capHit{}
@@ -35,7 +40,7 @@ func (r *reader) presentation(serr error) []gofastcore.Part {
 			n := len(parts) + 1
 			if !r.opts.Parts.Contains(n) {
 				s.Skip()
-				p := gofastcore.Part{Kind: gofastcore.PartSlide, Number: n}
+				p := gofastcore.Part{Kind: kind, Number: n}
 				p.Finish()
 				parts = append(parts, p)
 				uses = append(uses, slideUse{})
@@ -51,8 +56,8 @@ func (r *reader) presentation(serr error) []gofastcore.Part {
 		}
 	}
 	if len(parts) == 0 {
-		parts = append(parts, gofastcore.Part{Kind: gofastcore.PartSlide, Number: 1})
-		r.finish(&parts[0], "presentation")
+		parts = append(parts, gofastcore.Part{Kind: kind, Number: 1})
+		r.finish(&parts[0], whole)
 	}
 	for i := range parts {
 		for _, h := range r.heldHits[parts[i].Number] {
@@ -84,10 +89,14 @@ type slideUse struct {
 	notesAt int    // where the slide's notes begin in its blocks
 }
 
-// slide reads draw:page.
+// slide reads draw:page: a slide, or a drawing's page.
 func (r *reader) slide(n int) (gofastcore.Part, slideUse) {
 	s := &r.s
 	part := gofastcore.Part{Kind: gofastcore.PartSlide, Number: n}
+	what := "slide"
+	if r.pages {
+		part.Kind, what = gofastcore.PartPage, "page"
+	}
 	name := r.attr(ns.Draw, "name") // as the file gives it: used if no title names the slide
 	use := slideUse{master: r.attr(ns.Draw, "master-page-name")}
 	page := r.set.Box(r.sc, "drawing-page", r.attr(ns.Draw, "style-name"))
@@ -122,17 +131,11 @@ func (r *reader) slide(n int) (gofastcore.Part, slideUse) {
 			}
 			notes = append(notes, rest...)
 		case space == ns.Draw:
-			it := item{order: len(items), x: lastX, y: lastY}
-			if x, ok := r.length(ns.SVG, "x"); ok {
-				it.x = x
-			}
-			if y, ok := r.length(ns.SVG, "y"); ok {
-				it.y = y
-			}
-			lastX, lastY = it.x, it.y
+			it := item{order: len(items)}
 			class := r.attr(ns.Presentation, "class")
 			it.title = class == "title"
-			r.drawing(c, &it.blocks)
+			r.place(c, &it, lastX, lastY)
+			lastX, lastY = it.x, it.y
 			for i := range it.blocks {
 				b := &it.blocks[i]
 				if b.Table != nil || b.Image != nil || b.Kind == gofastcore.KindNote || b.Kind == gofastcore.KindFootnote {
@@ -196,13 +199,17 @@ func (r *reader) slide(n int) (gofastcore.Part, slideUse) {
 	if part.Name == "" {
 		part.Name = r.name(name)
 	}
-	r.finish(&part, "slide")
+	r.finish(&part, what)
 	return part, use
 }
 
 // defaultSlideHeight is the height, in points, of LibreOffice's default
-// 16:9 slide (15.75 cm), for a master whose page layout gives none.
-const defaultSlideHeight = 15.75 / 2.54 * 72
+// 16:9 slide (15.75 cm), for a master whose page layout gives none;
+// defaultPageHeight that of its default drawing page (A4, 29.7 cm).
+const (
+	defaultSlideHeight = 15.75 / 2.54 * 72
+	defaultPageHeight  = 29.7 / 2.54 * 72
+)
 
 // maxRepeated bounds the blocks that slides take from their master
 // pages over a presentation, as go-fast-ooxml bounds what slides take
@@ -288,8 +295,15 @@ func (r *reader) addMasters(parts []gofastcore.Part, uses []slideUse) {
 	// says it too; the first gives the count.
 	for k, i := range skipped {
 		msg := fmt.Sprintf("the text of the slide's master page is left out: the slides of the presentation repeat more of it than is kept (%d blocks)", maxRepeated)
+		if r.pages {
+			msg = fmt.Sprintf("the text of the page's master page is left out: the pages of the drawing repeat more of it than is kept (%d blocks)", maxRepeated)
+		}
 		if k == 0 {
-			msg += fmt.Sprintf("; %d slides are left without it", len(skipped))
+			if r.pages {
+				msg += fmt.Sprintf("; %d pages are left without it", len(skipped))
+			} else {
+				msg += fmt.Sprintf("; %d slides are left without it", len(skipped))
+			}
 		}
 		parts[i].Warn(gofastcore.SeverityError, gofastcore.WarnLimitExceeded, msg)
 	}
@@ -368,6 +382,9 @@ func (r *reader) slideMasters(part *gofastcore.Part, want map[string]int) (map[s
 			h, ok := heights[r.attr(ns.Style, "page-layout-name")]
 			if !ok {
 				h = defaultSlideHeight
+				if r.pages {
+					h = defaultPageHeight
+				}
 			}
 			// What bounds leave out of a master is said on the slides
 			// that show it.
@@ -412,13 +429,11 @@ func (r *reader) masterItems(height float64) []gofastcore.Block {
 			continue
 		}
 		it := item{order: len(items)}
-		it.x, _ = r.length(ns.SVG, "x")
-		it.y, _ = r.length(ns.SVG, "y")
+		r.place(ctxt{}, &it, 0, 0)
 		kind := gofastcore.KindHeader
 		if it.y >= height/2 {
 			kind = gofastcore.KindFooter
 		}
-		r.drawing(ctxt{}, &it.blocks)
 		for i := range it.blocks {
 			b := &it.blocks[i]
 			if b.Table != nil || b.Image != nil || b.Kind == gofastcore.KindNote || b.Kind == gofastcore.KindFootnote {
@@ -466,6 +481,51 @@ func markerInText(b *gofastcore.Block) {
 		b.Spans[i].End += shift
 	}
 	b.Marker, b.Ordered = "", false
+}
+
+// position reads where the current shape stands: svg:x and svg:y, or
+// for a line, connector or measure, which have none, its start point
+// (svg:x1, svg:y1). A coordinate not given keeps the one passed in; ok
+// reports whether either was given.
+func (r *reader) position(x, y float64) (float64, float64, bool) {
+	ok := false
+	if v, found := r.length(ns.SVG, "x"); found {
+		x, ok = v, true
+	} else if v, found := r.length(ns.SVG, "x1"); found {
+		x, ok = v, true
+	}
+	if v, found := r.length(ns.SVG, "y"); found {
+		y, ok = v, true
+	} else if v, found := r.length(ns.SVG, "y1"); found {
+		y, ok = v, true
+	}
+	return x, y, ok
+}
+
+// place reads the drawing element whose Start is current, as an item at
+// x, y: where it stands, or for a group with no position of its own (as
+// LibreOffice writes them) where the first shape in it with one stands.
+func (r *reader) place(c ctxt, it *item, x, y float64) {
+	var ok bool
+	it.x, it.y, ok = r.position(x, y)
+	group := !ok && string(r.s.Local()) == "g"
+	if group {
+		r.groupAt = &groupPos{x: x, y: y}
+	}
+	r.drawing(c, &it.blocks)
+	if group {
+		if r.groupAt.found {
+			it.x, it.y = r.groupAt.x, r.groupAt.y
+		}
+		r.groupAt = nil
+	}
+}
+
+// groupPos is the position of the first shape with one met in a group
+// being read.
+type groupPos struct {
+	x, y  float64
+	found bool
 }
 
 // length reads a length attribute in points.

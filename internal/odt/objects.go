@@ -133,7 +133,7 @@ func (r *reader) inlineObject(c ctxt, name string, dst *[]gofastcore.Block) bool
 		case s.Space() == ns.Chart && string(s.Local()) == "chart":
 			r.chart(s, c, name, dst)
 			found = true
-		case s.Space() == ns.Office && (string(s.Local()) == "text" || string(s.Local()) == "spreadsheet" || string(s.Local()) == "presentation"):
+		case s.Space() == ns.Office && bodyMIME[string(s.Local())] != "":
 			r.addUnread("embedded documents held in a flat file")
 			s.Skip()
 		}
