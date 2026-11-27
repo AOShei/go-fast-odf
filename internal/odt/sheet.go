@@ -8,9 +8,9 @@ import (
 	"unsafe"
 
 	"github.com/AOShei/go-fast-core"
-	"github.com/AOShei/go-fast-odf/internal/clean"
+	"github.com/AOShei/go-fast-core/clean"
+	"github.com/AOShei/go-fast-core/xmlscan"
 	"github.com/AOShei/go-fast-odf/internal/ns"
-	"github.com/AOShei/go-fast-odf/internal/xmlscan"
 )
 
 // WarnRegionSplit: an area of a sheet whose cells are spread so thinly

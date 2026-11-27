@@ -24,12 +24,12 @@ import (
 	"unicode"
 
 	"github.com/AOShei/go-fast-core"
-	"github.com/AOShei/go-fast-odf/internal/clean"
+	"github.com/AOShei/go-fast-core/clean"
+	"github.com/AOShei/go-fast-core/xmlscan"
 	"github.com/AOShei/go-fast-odf/internal/ns"
 	"github.com/AOShei/go-fast-odf/internal/num"
 	"github.com/AOShei/go-fast-odf/internal/odpkg"
 	"github.com/AOShei/go-fast-odf/internal/style"
-	"github.com/AOShei/go-fast-odf/internal/xmlscan"
 )
 
 // Shared warning codes this package raises, by short names.

@@ -5,8 +5,8 @@ import (
 	"strings"
 
 	"github.com/AOShei/go-fast-core"
+	"github.com/AOShei/go-fast-core/xmlscan"
 	"github.com/AOShei/go-fast-odf/internal/ns"
-	"github.com/AOShei/go-fast-odf/internal/xmlscan"
 )
 
 // maxCols bounds the columns of a table. A text document's table has a

@@ -15,11 +15,11 @@ import (
 	"strings"
 
 	"github.com/AOShei/go-fast-core"
-	"github.com/AOShei/go-fast-odf/internal/clean"
+	"github.com/AOShei/go-fast-core/clean"
+	"github.com/AOShei/go-fast-core/xmlscan"
 	"github.com/AOShei/go-fast-odf/internal/ns"
 	"github.com/AOShei/go-fast-odf/internal/odpkg"
 	"github.com/AOShei/go-fast-odf/internal/style"
-	"github.com/AOShei/go-fast-odf/internal/xmlscan"
 )
 
 type imageInfo struct {

@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/AOShei/go-fast-core/xmlscan"
 	"github.com/AOShei/go-fast-odf/internal/ns"
-	"github.com/AOShei/go-fast-odf/internal/xmlscan"
 )
 
 const nsDecl = ` xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"` +

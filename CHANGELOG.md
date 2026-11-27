@@ -3,12 +3,20 @@
 All notable changes to go-fast-odf are recorded here, in the style of
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## Unreleased
+## v0.3.1 (2026-11-27)
 
-- **go-fast-core v0.1.10** (was v0.1.6). Of the core code this module
-  uses, the only change since v0.1.6 is two new stored kinds: `gofastodf
-  -stored=` now also accepts `shape_data` and `linked_data`, which Visio
-  drawings in go-fast-ooxml will use.
+- **go-fast-core's shared packages** (core v0.1.13): XML is read with
+  its `xmlscan`, strings cleaned with its `clean` and the display of text
+  placed with its `hidden`, in place of this library's copies of
+  go-fast-ooxml's. The output of the corpus (260 files) is the same but
+  for one error message; reading takes 13 % fewer instructions over it,
+  as the shared scanner has go-fast-ooxml's speed work (prefix cache,
+  attributes by offsets) that this library's copy lacked.
+- A file that is markup but not well-formed before its first element is
+  still refused as a document of another kind (`ErrUnsupported`), now
+  with the message "markup that is not an OpenDocument file".
+- `gofastodf -stored=` also accepts `shape_data` and `linked_data`, the
+  stored kinds go-fast-ooxml's Visio drawings use (core v0.1.10).
 
 ## v0.3.0 (2026-11-26)
 

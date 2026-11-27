@@ -5,18 +5,18 @@ import (
 	"unicode/utf8"
 
 	"github.com/AOShei/go-fast-core"
-	"github.com/AOShei/go-fast-odf/internal/clean"
-	"github.com/AOShei/go-fast-odf/internal/display"
+	"github.com/AOShei/go-fast-core/clean"
+	"github.com/AOShei/go-fast-core/hidden"
+	"github.com/AOShei/go-fast-core/xmlscan"
 	"github.com/AOShei/go-fast-odf/internal/ns"
 	"github.com/AOShei/go-fast-odf/internal/num"
 	"github.com/AOShei/go-fast-odf/internal/style"
-	"github.com/AOShei/go-fast-odf/internal/xmlscan"
 )
 
 var (
 	decodeRune     = utf8.DecodeRune
 	decodeLastRune = utf8.DecodeLastRune
-	settle         = display.Settle
+	settle         = hidden.Settle
 )
 
 // maxSpaces bounds what one text:s may ask for.

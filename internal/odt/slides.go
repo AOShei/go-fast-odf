@@ -6,9 +6,9 @@ import (
 	"slices"
 
 	"github.com/AOShei/go-fast-core"
+	"github.com/AOShei/go-fast-core/xmlscan"
 	"github.com/AOShei/go-fast-odf/internal/ns"
 	"github.com/AOShei/go-fast-odf/internal/style"
-	"github.com/AOShei/go-fast-odf/internal/xmlscan"
 )
 
 // presentation reads office:presentation, which is current, into one
