@@ -15,10 +15,10 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/AOShei/go-fast-core/xmlscan"
 	"github.com/AOShei/go-fast-odf/internal/ns"
 	"github.com/AOShei/go-fast-odf/internal/num"
 	"github.com/AOShei/go-fast-odf/internal/odpkg"
-	"github.com/AOShei/go-fast-odf/internal/xmlscan"
 )
 
 // Color is a font colour as a style gives it. Only whether it is a

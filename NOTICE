@@ -1,15 +1,9 @@
 go-fast-odf
 Copyright (c) 2025 Andrew O'Shei. Licensed under the MIT License (see LICENSE).
 
-This software includes code copied from go-fast-ooxml
-(github.com/AOShei/go-fast-ooxml), Copyright (c) 2025 Andrew O'Shei, under
-the same MIT License. Each copied file says so in its first lines:
-
-  internal/xmlscan/xmlscan.go, encoding.go, xmlscan_test.go
-                               (go-fast-ooxml internal/xmlscan)
-  internal/clean/clean.go, clean_test.go
-                               (go-fast-ooxml internal/clean)
-  internal/display/display.go  (go-fast-ooxml internal/hidden)
+XML is read with go-fast-core's xmlscan, and strings cleaned and the
+display of text placed with its clean and hidden packages; this library's
+copies of them (from go-fast-ooxml) were merged into go-fast-core.
 
 Argon2id and BLAKE2b (internal/argon2) are written from RFC 9106 and
 RFC 7693, and Blowfish (internal/blowfish) from Schneier's description.

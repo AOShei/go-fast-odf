@@ -1,7 +1,7 @@
 // Package ns numbers the XML namespaces of OpenDocument for xmlscan.
 package ns
 
-import "github.com/AOShei/go-fast-odf/internal/xmlscan"
+import "github.com/AOShei/go-fast-core/xmlscan"
 
 // The namespaces the readers look at.
 const (

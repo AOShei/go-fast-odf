@@ -17,8 +17,8 @@ import (
 	"io"
 	"strings"
 
+	"github.com/AOShei/go-fast-core/clean"
 	"github.com/AOShei/go-fast-core/inflate"
-	"github.com/AOShei/go-fast-odf/internal/clean"
 )
 
 // Errors of decryption. The extractor maps them to the shared errors.

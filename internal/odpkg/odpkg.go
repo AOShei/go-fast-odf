@@ -21,11 +21,11 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/AOShei/go-fast-core/clean"
+	"github.com/AOShei/go-fast-core/xmlscan"
 	"github.com/AOShei/go-fast-core/ziprecover"
-	"github.com/AOShei/go-fast-odf/internal/clean"
 	"github.com/AOShei/go-fast-odf/internal/ns"
 	number "github.com/AOShei/go-fast-odf/internal/num"
-	"github.com/AOShei/go-fast-odf/internal/xmlscan"
 )
 
 // Errors returned by this package. The extractor maps them to the shared
@@ -338,6 +338,13 @@ func OpenFlat(r io.ReaderAt, size int64, lim Limits) (*Package, error) {
 			p.synced = lim.MaxDecodedBytes
 			return p, nil
 		case xmlscan.EOF:
+			if errors.Is(s.Err(), xmlscan.ErrSyntax) {
+				// Markup, but not well-formed before its first element:
+				// a document of another kind, as before go-fast-core's
+				// scanner, which reads it as an error rather than as an
+				// element with a strange name.
+				return nil, fmt.Errorf("%w: markup that is not an OpenDocument file", ErrNotPackage)
+			}
 			return nil, fmt.Errorf("%w: not XML", ErrNotZip)
 		}
 	}

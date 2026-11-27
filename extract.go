@@ -10,7 +10,7 @@ import (
 	"strings"
 
 	"github.com/AOShei/go-fast-core"
-	"github.com/AOShei/go-fast-odf/internal/clean"
+	"github.com/AOShei/go-fast-core/clean"
 	"github.com/AOShei/go-fast-odf/internal/meta"
 	"github.com/AOShei/go-fast-odf/internal/odpkg"
 	"github.com/AOShei/go-fast-odf/internal/odt"
