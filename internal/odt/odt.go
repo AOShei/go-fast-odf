@@ -579,6 +579,10 @@ type para struct {
 	markerCut bool               // the producer's label was cut at the length of a label
 	hidden    gofastcore.Display // the paragraph is hidden (text:hidden-paragraph)
 	cut       bool
+	// drawn holds the ranges of after that drawings anchored in the
+	// paragraph added (pictures, text boxes): what hides the paragraph
+	// hides them.
+	drawn [][2]int
 }
 
 // paragraph reads text:p or text:h. item, if set, is the list item it
@@ -686,6 +690,18 @@ func (r *reader) paragraph(c ctxt, heading bool, item *itemCtx, dst *[]gofastcor
 		}
 		r.lost(capLabel, cuts)
 	}
+	// The drawings anchored in the paragraph are hidden by what hides
+	// it: its section, a hidden-paragraph field. Stored data among their
+	// blocks (a field code in a text box) takes no reason.
+	if h := c.hidden | p.hidden; h != 0 {
+		for _, d := range p.drawn {
+			for i := d[0]; i < d[1]; i++ {
+				if b := &p.after[i]; b.Attrs[gofastcore.AttrStored] == "" {
+					whole(b, h)
+				}
+			}
+		}
+	}
 	// What stands after the paragraph was charged when it was read.
 	*dst = append(*dst, p.after...)
 	if p.cut {
@@ -708,7 +724,7 @@ func (r *reader) newPara() *para {
 // and puts it on the free list.
 func (r *reader) freePara(p *para) {
 	clear(p.after)
-	*p = para{buf: p.buf[:0], spans: p.spans[:0], after: p.after[:0], space: true}
+	*p = para{buf: p.buf[:0], spans: p.spans[:0], after: p.after[:0], drawn: p.drawn[:0], space: true}
 	r.freeParas = append(r.freeParas, p)
 }
 
@@ -726,7 +742,7 @@ func (r *reader) thematicBreak(ps style.Resolved, empty bool, dst *[]gofastcore.
 // whole adds reasons that apply to all of a block, taking them off its
 // spans, where they would say they apply only there.
 func whole(b *gofastcore.Block, h gofastcore.Display) {
-	if h == 0 || b.Text == "" && b.Table == nil {
+	if h == 0 || b.Text == "" && b.Table == nil && b.Image == nil {
 		return
 	}
 	b.Display |= h

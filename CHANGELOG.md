@@ -3,6 +3,21 @@
 All notable changes to go-fast-odf are recorded here, in the style of
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## v0.3.2
+
+- **Hidden pictures are reported hidden.** A picture is hidden by
+  whatever hides what it is anchored in, and two cases were missed:
+  - a picture with no alt text was never marked, whatever hid it (a
+    hidden paragraph style or span, a hidden paragraph in a text box);
+  - no picture in a hidden section, or in a paragraph hidden by a
+    hidden-paragraph field, was marked, with alt text or without.
+
+  The drawings anchored in a paragraph (pictures, text boxes) now take
+  the reasons of its section and of a hidden-paragraph field. Stored data
+  among them (a field code in a text box) takes no reason, as before.
+  Found by a survey of the libraries' span and display arithmetic. Over
+  the corpus no file changes.
+
 ## v0.3.1 (2026-11-27)
 
 - **go-fast-core's shared packages** (core v0.1.13): XML is read with

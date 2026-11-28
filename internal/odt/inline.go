@@ -171,7 +171,9 @@ func (r *reader) inline(p *para, ru run, depth int) {
 		case ns.Text:
 			r.inlineText(p, ru, local)
 		case ns.Draw:
+			at := len(p.after)
 			r.drawing(ctxt{hidden: reasons(&ru) & gofastcore.DisplayHidden}, &p.after)
+			p.drawn = append(p.drawn, [2]int{at, len(p.after)})
 		case ns.Office:
 			switch local {
 			case "annotation":
